@@ -165,5 +165,33 @@ describe("Compat", function()
             assert.is_true(Compat.IsSecret("s"))
             assert.is_false(Compat.IsSecret("t"))
         end)
+
+        it("hooks unit tooltips through the tooltip-data API", function()
+            local registered
+            local Compat = loadCompat({ globals = {
+                Enum = { TooltipDataType = { Unit = 2 } },
+                TooltipDataProcessor = { AddTooltipPostCall = function(dataType, callback)
+                    registered = { dataType = dataType, callback = callback }
+                end },
+            } })
+            local seen
+            Compat.HookUnitTooltip(function(_, unit) seen = unit end)
+            assert.are.equal(2, registered.dataType)
+            registered.callback({ GetUnit = function() return "Name", "mouseover" end })
+            assert.are.equal("mouseover", seen)
+        end)
+
+        it("falls back to OnTooltipSetUnit without the tooltip-data API", function()
+            local scripts = {}
+            local tooltip = {
+                HookScript = function(_, script, handler) scripts[script] = handler end,
+                GetUnit = function() return "Name", "target" end,
+            }
+            local Compat = loadCompat({ globals = { GameTooltip = tooltip, TooltipDataProcessor = false } })
+            local seen
+            Compat.HookUnitTooltip(function(_, unit) seen = unit end)
+            scripts.OnTooltipSetUnit(tooltip)
+            assert.are.equal("target", seen)
+        end)
     end)
 end)

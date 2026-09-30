@@ -1,11 +1,11 @@
 local Harness = require("support.wow")
 
 local DRESDEN = {
-    name = "Dresden Zelwindran", guid = "G-D", rankIndex = 1, level = 60, class = "WARRIOR",
+    name = "Dresden Zelwindran", guid = "G-D", rankIndex = 1, level = 60, class = "WARRIOR", className = "Warrior",
     zone = "Stormwind", note = "@Zel", online = true,
 }
 local MALGEN = {
-    name = "Malgen Zelwindran", guid = "G-M", rankIndex = 4, level = 34, class = "MAGE",
+    name = "Malgen Zelwindran", guid = "G-M", rankIndex = 4, level = 34, class = "MAGE", className = "Mage",
     zone = "", note = ">Dresden", online = false,
 }
 
@@ -25,11 +25,11 @@ describe("RosterAdapter", function()
         assert.are.same({
             {
                 key = "Dresden Zelwindran-Forever", name = "Dresden Zelwindran", guid = "G-D", rankIndex = 1,
-                class = "WARRIOR", level = 60, online = true, zone = "Stormwind", note = "@Zel",
+                class = "WARRIOR", className = "Warrior", level = 60, online = true, zone = "Stormwind", note = "@Zel",
             },
             {
                 key = "Malgen Zelwindran-Forever", name = "Malgen Zelwindran", guid = "G-M", rankIndex = 4,
-                class = "MAGE", level = 34, online = false, zone = "", note = ">Dresden",
+                class = "MAGE", className = "Mage", level = 34, online = false, zone = "", note = ">Dresden",
             },
         }, adapter.BuildSnapshot())
     end)

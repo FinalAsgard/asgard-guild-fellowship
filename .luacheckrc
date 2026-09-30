@@ -9,6 +9,8 @@ read_globals = {
     "C_Timer",
     "ChatFrame_AddMessageEventFilter",
     "ChatFrameUtil",
+    "Enum",
+    "GameTooltip",
     "GetAddOnMetadata",
     "GetGuildInfo",
     "GetGuildRosterInfo",
@@ -16,9 +18,13 @@ read_globals = {
     "GetNumGuildMembers",
     "GetTime",
     "GuildRoster",
+    "hooksecurefunc",
     "IsInGuild",
     "issecretvalue",
     "LibStub",
+    "TooltipDataProcessor",
+    "UnitIsPlayer",
+    "UnitName",
 }
 
 files["spec/"] = { std = "+busted" }

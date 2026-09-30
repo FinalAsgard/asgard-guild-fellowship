@@ -47,12 +47,12 @@ function RosterAdapter:OnRosterUpdate(canRequestRosterUpdate)
     end)
 end
 
--- One entry per member: key, name (no realm), guid, rankIndex, class, level,
--- online, zone, note (the public note).
+-- One entry per member: key, name (no realm), guid, rankIndex, class (token),
+-- className (localized), level, online, zone, note (the public note).
 function RosterAdapter.BuildSnapshot()
     local snapshot = {}
     for index = 1, GetNumGuildMembers() do
-        local fullName, _, rankIndex, level, _, zone, publicNote, _, isOnline, _, class,
+        local fullName, _, rankIndex, level, className, zone, publicNote, _, isOnline, _, class,
             _, _, _, _, _, guid = GetGuildRosterInfo(index)
         local key = fullName and addon.Compat.NormalizeName(fullName)
         if key then
@@ -62,6 +62,7 @@ function RosterAdapter.BuildSnapshot()
                 guid = guid,
                 rankIndex = rankIndex,
                 class = class,
+                className = className,
                 level = level,
                 online = isOnline and true or false,
                 zone = zone,

@@ -287,4 +287,84 @@ describe("Core", function()
             assert.are.equal("hi", harness:chat("CHAT_MSG_GUILD", "hi", "Malgen Zelwindran"))
         end)
     end)
+
+    describe("tooltips", function()
+        local ROSTER = {
+            { name = "Dresden Zelwindran", guid = "G-D", note = "@Zel", online = true, level = 60,
+                className = "Warrior" },
+            { name = "Malgen Zelwindran", guid = "G-M", note = ">Dresden", online = false, level = 34,
+                className = "Mage" },
+            { name = "Plain Main", guid = "G-P", note = "", online = true, level = 10, className = "Rogue" },
+        }
+        local UNITS = {
+            mouseover = { name = "Malgen Zelwindran", player = true },
+            target = { name = "Plain Main", player = true },
+            focus = { name = "Random Stranger", player = true },
+            npc = { name = "Malgen Zelwindran", player = false },
+        }
+
+        local function bootWithRoster()
+            local ns, log, harness = boot({
+                client = "Forever", guild = { name = "Asgard" }, roster = ROSTER, units = UNITS,
+            })
+            ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", false)
+            harness:advance(1)
+            return harness
+        end
+
+        local function lefts(lines)
+            local result = {}
+            for _, line in ipairs(lines) do
+                table.insert(result, line.left)
+            end
+            return result
+        end
+
+        it("adds the identity section to a guildmate's unit tooltip", function()
+            local harness = bootWithRoster()
+            assert.are.same({ "Zel", "Playing Malgen Zelwindran", "Main: Dresden Zelwindran" },
+                lefts(harness:hoverUnit("mouseover")))
+            assert.are.equal("60 Warrior", harness.tooltip.lines[3].right)
+        end)
+
+        it("adds nothing for non-guildmates, NPCs, or guildmates with nothing to add", function()
+            local harness = bootWithRoster()
+            assert.are.same({}, harness:hoverUnit("focus"))
+            assert.are.same({}, harness:hoverUnit("npc"))
+            assert.are.same({}, harness:hoverUnit("target"))
+        end)
+
+        it("skips units the client hides from add-ons", function()
+            local harness = bootWithRoster()
+            harness.env.issecretvalue = function(value)
+                return value == "mouseover"
+            end
+            assert.are.same({}, harness:hoverUnit("mouseover"))
+        end)
+
+        it("adds the identity section to a guild roster row tooltip once", function()
+            local harness = bootWithRoster()
+            local lines = harness:hoverRosterRow({ name = "Malgen Zelwindran", guid = "G-M" })
+            assert.are.same({ "Malgen Zelwindran", "Zel", "Playing Malgen Zelwindran", "Main: Dresden Zelwindran" },
+                lefts(lines))
+            assert.are.equal(2, harness.tooltip.shows)
+            harness.tooltip:Show()
+            assert.are.equal(4, #harness.tooltip.lines)
+        end)
+
+        it("adds the section again for the next roster row", function()
+            local harness = bootWithRoster()
+            harness:hoverRosterRow({ name = "Malgen Zelwindran" })
+            assert.are.same({ "Dresden Zelwindran", "Zel", "Playing Dresden Zelwindran (main)", "  Malgen Zelwindran" },
+                lefts(harness:hoverRosterRow({ name = "Dresden Zelwindran" })))
+        end)
+
+        it("leaves other tooltips alone", function()
+            local harness = bootWithRoster()
+            harness.tooltip:SetOwner({})
+            harness.tooltip:AddLine("Some item")
+            harness.tooltip:Show()
+            assert.are.same({ "Some item" }, lefts(harness.tooltip.lines))
+        end)
+    end)
 end)

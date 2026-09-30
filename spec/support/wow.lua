@@ -13,12 +13,14 @@ Harness.__index = Harness
 --   version    manifest Version value
 --   realm      what GetNormalizedRealmName returns
 --   guild      { name = ..., realm = ... } when the player is in a guild
---   roster     guild members: { name, guid, rankIndex, level, class, zone, note, online }
+--   roster     guild members: { name, guid, rankIndex, level, class, className, zone, note, online }
 --              (name as GetGuildRosterInfo reports it, with or without realm)
+--   units      unit tokens the client knows: { mouseover = { name = ..., realm = ..., player = true } }
 --   globals    extra globals, e.g. another add-on's SLASH_ entries or a fake LibStub
 --
 -- The harness also keeps a clock (`advance`), records roster requests
--- (`rosterRequests`), and runs registered chat filters (`chat`).
+-- (`rosterRequests`), runs registered chat filters (`chat`), and fakes
+-- GameTooltip (`hoverUnit`, `hoverRosterRow`).
 function Harness.new(options)
     options = options or {}
     local self = setmetatable({
@@ -28,7 +30,10 @@ function Harness.new(options)
         timers = {},
         rosterRequests = 0,
         chatFilters = {},
+        unitTooltipPostCalls = {},
     }, Harness)
+    local tooltip = self:newTooltip()
+    self.tooltip = tooltip
     local metadata = {
         Version = options.version or "1.2.3",
         ["X-Client"] = options.client or "Retail",
@@ -71,8 +76,36 @@ function Harness.new(options)
         GetGuildRosterInfo = function(index)
             local m = (options.roster or {})[index]
             if m then
-                return m.name, "Rank", m.rankIndex, m.level, m.class, m.zone, m.note, "", m.online, 0, m.class,
+                return m.name, "Rank", m.rankIndex, m.level, m.className or m.class, m.zone, m.note, "", m.online, 0,
+                    m.class,
                     0, 0, false, false, 0, m.guid
+            end
+        end,
+        Enum = { TooltipDataType = { Unit = 2 } },
+        TooltipDataProcessor = {
+            AddTooltipPostCall = function(dataType, callback)
+                if dataType == 2 then
+                    table.insert(self.unitTooltipPostCalls, callback)
+                end
+            end,
+        },
+        GameTooltip = tooltip,
+        hooksecurefunc = function(target, method, hook)
+            local original = target[method]
+            target[method] = function(...)
+                local results = { original(...) }
+                hook(...)
+                return unpack(results)
+            end
+        end,
+        UnitIsPlayer = function(unit)
+            local info = (options.units or {})[unit]
+            return info ~= nil and info.player == true
+        end,
+        UnitName = function(unit)
+            local info = (options.units or {})[unit]
+            if info then
+                return info.name, info.realm
             end
         end,
         ChatFrame_AddMessageEventFilter = function(event, filter)
@@ -96,6 +129,67 @@ function Harness:load(path)
     setfenv(chunk, self.env)
     chunk(ADDON, self.namespace)
     return self.namespace
+end
+
+-- A fake tooltip that records its lines. Show and OnTooltipCleared behave like
+-- GameTooltip's: Show can be hooked, and clearing runs OnTooltipCleared scripts.
+function Harness.newTooltip()
+    local tooltip = { lines = {}, scripts = {}, shows = 0 }
+    function tooltip:AddLine(text, r, g, b)
+        table.insert(self.lines, { left = text, color = { r, g, b } })
+    end
+    function tooltip:AddDoubleLine(left, right, r, g, b)
+        table.insert(self.lines, { left = left, right = right, color = { r, g, b } })
+    end
+    function tooltip:Show()
+        self.shows = self.shows + 1
+    end
+    function tooltip:GetOwner()
+        return self.owner
+    end
+    function tooltip:GetUnit()
+        return self.unit and "name", self.unit
+    end
+    function tooltip:HookScript(script, handler)
+        self.scripts[script] = self.scripts[script] or {}
+        table.insert(self.scripts[script], handler)
+    end
+    function tooltip:SetOwner(owner)
+        self.owner = owner
+        self.unit = nil
+        self.lines = {}
+        for _, handler in ipairs(self.scripts.OnTooltipCleared or {}) do
+            handler(self)
+        end
+    end
+    return tooltip
+end
+
+-- Shows GameTooltip for `unit` the way the client does, running unit
+-- post-calls. Returns the tooltip's lines.
+function Harness:hoverUnit(unit)
+    local tooltip = self.tooltip
+    tooltip:SetOwner({})
+    tooltip.unit = unit
+    for _, callback in ipairs(self.unitTooltipPostCalls) do
+        callback(tooltip, {})
+    end
+    tooltip:Show()
+    return tooltip.lines
+end
+
+-- Shows GameTooltip for a guild roster row whose member info is `memberInfo`,
+-- the way the row's OnEnter does. Returns the tooltip's lines.
+function Harness:hoverRosterRow(memberInfo)
+    local tooltip = self.tooltip
+    tooltip:SetOwner({
+        GetMemberInfo = function()
+            return memberInfo
+        end,
+    })
+    tooltip:AddLine(memberInfo.name)
+    tooltip:Show()
+    return tooltip.lines
 end
 
 -- Moves the clock forward, running every timer that comes due.

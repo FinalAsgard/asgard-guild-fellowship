@@ -9,7 +9,13 @@ addon.IdentityStore = IdentityStore
 
 -- `guildData` is the current guild's saved table; resolutions persist there.
 function IdentityStore.New(guildData)
-    local store = setmetatable({ data = guildData, persons = {}, charToPerson = {}, issues = {} }, IdentityStore)
+    local store = setmetatable({
+        data = guildData,
+        persons = {},
+        charToPerson = {},
+        members = {},
+        issues = {},
+    }, IdentityStore)
     store.callbacks = LibStub("CallbackHandler-1.0"):New(store)
     return store
 end
@@ -21,6 +27,10 @@ function IdentityStore:Update(snapshot)
     self.persons = result.persons
     self.charToPerson = result.charToPerson
     self.issues = result.issues
+    self.members = {}
+    for _, member in ipairs(snapshot) do
+        self.members[member.key] = member
+    end
     self.data.resolutions = result.resolutions
     self.callbacks:Fire("IdentityChanged")
 end
@@ -33,6 +43,12 @@ end
 
 function IdentityStore:GetPersonById(personId)
     return self.persons[personId]
+end
+
+-- A character's roster entry (name, class, className, level, online, zone, ...),
+-- or nil. Treat it as read-only.
+function IdentityStore:GetCharacterInfo(charKey)
+    return self.members[charKey]
 end
 
 -- The person's character keys, main first. Treat the list as read-only.

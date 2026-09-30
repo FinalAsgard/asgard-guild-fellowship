@@ -104,3 +104,20 @@ end
 function Compat.IsSecret(value)
     return issecretvalue ~= nil and issecretvalue(value) == true
 end
+
+-- Calls `callback(tooltip, unit)` after a unit tooltip is filled in. Uses the
+-- tooltip-data post-call API where the client has it, else the older
+-- OnTooltipSetUnit script. Both only append, so neither taints.
+function Compat.HookUnitTooltip(callback)
+    if TooltipDataProcessor and Enum and Enum.TooltipDataType then
+        TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, function(tooltip)
+            local _, unit = tooltip:GetUnit()
+            callback(tooltip, unit)
+        end)
+    elseif GameTooltip then
+        GameTooltip:HookScript("OnTooltipSetUnit", function(tooltip)
+            local _, unit = tooltip:GetUnit()
+            callback(tooltip, unit)
+        end)
+    end
+end

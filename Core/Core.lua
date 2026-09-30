@@ -40,6 +40,7 @@ function Core:OnEnable()
     addon.ChatTag.Register(function()
         return self.db.profile.chatTag
     end)
+    addon.Tooltip.Register()
     self:RegisterEvent("PLAYER_GUILD_UPDATE", "UpdateGuild")
     self:UpdateGuild()
 end
