@@ -1,0 +1,8 @@
+## Interface: 16000, 16001
+## Title: Asgard's Guild Fellowship
+## Notes: Helps guild members know, recognize, find, and play with each other.
+## Author: FinalAsgard
+## Version: @project-version@
+## X-Client: Forever
+
+AsgardsGuildFellowship.lua
