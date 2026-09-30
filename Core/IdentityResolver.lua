@@ -1,9 +1,12 @@
 local _, addon = ...
 
 -- Turns a roster snapshot into people. Pure and deterministic: no WoW API, and
--- the same snapshot always gives the same result.
+-- the same inputs always give the same result.
 local IdentityResolver = {}
 addon.IdentityResolver = IdentityResolver
+
+-- How many alt-to-alt hops are followed before a chain is given up on.
+IdentityResolver.MAX_CHAIN = 5
 
 local function firstName(name)
     return name:match("^(%S+)")
@@ -18,53 +21,163 @@ local function addTo(index, key, member)
     table.insert(list, member)
 end
 
--- The character `ref` names. An exact full-name match wins; otherwise the ref's
--- first word must match exactly one character's first name.
-local function match(ref, byFullName, byFirstName)
-    local lowered = ref:lower()
-    local exact = byFullName[lowered]
-    if exact then
-        return #exact == 1 and exact[1] or nil
+local function keysOf(members)
+    local keys = {}
+    for _, member in ipairs(members) do
+        table.insert(keys, member.key)
     end
-    local candidates = byFirstName[firstName(lowered)]
-    if candidates and #candidates == 1 then
-        return candidates[1]
-    end
+    return keys
 end
 
--- resolve(snapshot) -> { persons, charToPerson, resolutions }
---   snapshot: list of { key, guid, name, note, ... } (name has no realm)
+local function sortedKeys(members)
+    local keys = keysOf(members)
+    table.sort(keys)
+    return keys
+end
+
+-- resolve(snapshot, cachedResolutions) -> { persons, charToPerson, resolutions, issues }
+--   snapshot: list of { key, guid, name, note, ... } (key is Name-Realm, name has no realm)
+--   cachedResolutions: the `resolutions` from an earlier run, or nil
 --   persons[id]: { id, mainKey, characters, alias, shortName, displayName }
 --     id is the main's GUID; characters lists the main first, then alts by key.
 --   charToPerson[key]: person id
---   resolutions[altKey]: { main = person id, ref = the note's main ref }
-function IdentityResolver.resolve(snapshot)
-    local byFullName, byFirstName, notes = {}, {}, {}
+--   resolutions[altKey]: { main = person id, target = linked character's GUID, ref = note ref }
+--     for each linked alt, plus the last known link of each orphaned alt
+--   issues: list of { type, characters, ref, fix }, where type is one of
+--     ambiguous, chain, cycle, orphan, unresolved
+function IdentityResolver.resolve(snapshot, cachedResolutions)
+    cachedResolutions = cachedResolutions or {}
+    local byKey, byFullName, byFirstName, notes = {}, {}, {}, {}
     for _, member in ipairs(snapshot) do
         local lowered = member.name:lower()
+        byKey[member.key:lower()] = { member }
         addTo(byFullName, lowered, member)
         addTo(byFirstName, firstName(lowered), member)
         notes[member.key] = addon.NoteCodec.parse(member.note)
     end
 
-    local targets = {}
+    -- The shortest name that picks out one character: the first name, then the
+    -- full name, then Name-Realm (only needed for same-name cross-realm members).
+    local function shortestName(member)
+        local first = firstName(member.name)
+        if #byFirstName[first:lower()] == 1 then
+            return first
+        end
+        if #byFullName[member.name:lower()] == 1 then
+            return member.name
+        end
+        return member.key
+    end
+
+    local issues = {}
+    local function raise(issueType, characters, ref, fix)
+        table.insert(issues, { type = issueType, characters = characters, ref = ref, fix = fix })
+    end
+
+    -- Everyone `ref` could mean. `Name-Realm` names one character exactly;
+    -- otherwise an exact full name wins over a first-name match.
+    local function candidatesFor(ref)
+        local lowered = ref:lower()
+        return byKey[lowered] or byFullName[lowered] or byFirstName[firstName(lowered)] or {}
+    end
+
+    -- Step 1: each alt's direct target.
+    local targets, orphaned = {}, {}
     for _, member in ipairs(snapshot) do
         local ref = notes[member.key].mainRef
-        local target = ref and match(ref, byFullName, byFirstName)
-        if target and target ~= member then
-            targets[member.key] = target
+        if ref then
+            local candidates = {}
+            for _, candidate in ipairs(candidatesFor(ref)) do
+                if candidate ~= member then
+                    table.insert(candidates, candidate)
+                end
+            end
+            local cached = cachedResolutions[member.key]
+            local cachedStillFits = cached and cached.ref and cached.ref:lower() == ref:lower()
+            if #candidates == 1 then
+                targets[member.key] = candidates[1]
+            elseif #candidates > 1 then
+                local names = {}
+                for _, candidate in ipairs(candidates) do
+                    if cachedStillFits and candidate.guid == cached.target then
+                        targets[member.key] = candidate
+                    end
+                    table.insert(names, shortestName(candidate))
+                end
+                table.sort(names)
+                raise("ambiguous", { member.key }, ref, ("%s's note >%s matches %s. Use one of those names instead.")
+                    :format(member.name, ref, table.concat(names, ", ")))
+            elseif #candidatesFor(ref) == 0 then
+                if cachedStillFits then
+                    -- Keep the old link on record so the alt stays an orphan
+                    -- rather than turning "unresolved" on the next update.
+                    orphaned[member.key] = cached
+                    local fix = "%s's main %s is no longer in the guild. Update or clear the note."
+                    raise("orphan", { member.key }, ref, fix:format(member.name, ref))
+                else
+                    local fix = "No guild member matches %s in %s's note. Check the spelling."
+                    raise("unresolved", { member.key }, ref, fix:format(ref, member.name))
+                end
+            end
         end
     end
 
-    local persons, charToPerson, resolutions = {}, {}, {}
+    -- Step 2: follow alt-to-alt links to the terminal main.
+    local mains, cycles = {}, {}
+    for _, member in ipairs(snapshot) do
+        local current = targets[member.key]
+        if current then
+            local path, seen, status = { member }, { [member] = true }, "ok"
+            while targets[current.key] do
+                if seen[current] then
+                    status = "cycle"
+                    break
+                end
+                if #path > IdentityResolver.MAX_CHAIN then
+                    status = "too long"
+                    break
+                end
+                seen[current] = true
+                table.insert(path, current)
+                current = targets[current.key]
+            end
+            local ref = notes[member.key].mainRef
+            if status == "ok" then
+                mains[member.key] = current
+                if #path > 1 then
+                    local chain = keysOf(path)
+                    table.insert(chain, current.key)
+                    raise("chain", chain, ref, ("%s points to %s, who is an alt of %s. Change the note to >%s.")
+                        :format(member.name, path[2].name, current.name, shortestName(current)))
+                end
+            elseif status == "cycle" then
+                -- Collect the loop itself so each cycle is reported once.
+                local loop, walker = { current }, targets[current.key]
+                while walker ~= current do
+                    table.insert(loop, walker)
+                    walker = targets[walker.key]
+                end
+                local loopKeys = sortedKeys(loop)
+                cycles[table.concat(loopKeys, "|")] = loopKeys
+            else
+                raise("chain", keysOf(path), ref, ("%s's chain of main links is longer than %d. Point it at the main.")
+                    :format(member.name, IdentityResolver.MAX_CHAIN))
+            end
+        end
+    end
+    for _, loopKeys in pairs(cycles) do
+        raise("cycle", loopKeys, nil, ("These notes point at each other: %s. Remove the > link from the main's note.")
+            :format(table.concat(loopKeys, ", ")))
+    end
+
+    -- Step 3: build people.
+    local persons, charToPerson = {}, {}
+    local resolutions = orphaned
     local function personFor(main)
         local id = main.guid or main.key
         local person = persons[id]
         if not person then
-            local short = main.name
-            if #byFirstName[firstName(main.name:lower())] == 1 then
-                short = firstName(main.name)
-            end
+            local short = shortestName(main)
             local alias = notes[main.key].alias
             person = {
                 id = id,
@@ -79,26 +192,33 @@ function IdentityResolver.resolve(snapshot)
         end
         return person
     end
-
     for _, member in ipairs(snapshot) do
-        local target = targets[member.key]
-        -- A link to a character that is itself linked is a chain; it stays
-        -- unlinked until chains are supported.
-        if target and not targets[target.key] then
-            local person = personFor(target)
+        local main = mains[member.key]
+        if main then
+            local person = personFor(main)
             table.insert(person.characters, member.key)
             charToPerson[member.key] = person.id
-            resolutions[member.key] = { main = person.id, ref = notes[member.key].mainRef }
+            resolutions[member.key] = {
+                main = person.id,
+                target = targets[member.key].guid,
+                ref = notes[member.key].mainRef,
+            }
         else
             personFor(member)
         end
     end
-
     for _, person in pairs(persons) do
-        local main = table.remove(person.characters, 1)
+        local mainKey = table.remove(person.characters, 1)
         table.sort(person.characters)
-        table.insert(person.characters, 1, main)
+        table.insert(person.characters, 1, mainKey)
     end
 
-    return { persons = persons, charToPerson = charToPerson, resolutions = resolutions }
+    table.sort(issues, function(a, b)
+        if a.type ~= b.type then
+            return a.type < b.type
+        end
+        return a.characters[1] < b.characters[1]
+    end)
+
+    return { persons = persons, charToPerson = charToPerson, resolutions = resolutions, issues = issues }
 end

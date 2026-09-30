@@ -57,7 +57,8 @@ describe("IdentityStore", function()
     it("persists resolutions in the guild's data", function()
         local guildData = {}
         newStore(guildData):Update(ROSTER)
-        assert.are.same({ ["Malgen Zelwindran-Forever"] = { main = "G-D", ref = "Dresden" } }, guildData.resolutions)
+        assert.are.same({ ["Malgen Zelwindran-Forever"] = { main = "G-D", target = "G-D", ref = "Dresden" } },
+            guildData.resolutions)
     end)
 
     it("fires IdentityChanged after each update", function()
@@ -69,5 +70,33 @@ describe("IdentityStore", function()
         store:Update(ROSTER)
         store:Update(ROSTER)
         assert.are.equal(2, fired)
+    end)
+
+    it("reports note issues", function()
+        local store = newStore()
+        store:Update({
+            { key = "Malgen-Forever", name = "Malgen", guid = "G-M", note = ">Nobody" },
+        })
+        local issues = store:GetIssues()
+        assert.are.equal(1, #issues)
+        assert.are.equal("unresolved", issues[1].type)
+        assert.are.same({ "Malgen-Forever" }, issues[1].characters)
+        assert.are.equal("Nobody", issues[1].ref)
+        assert.is_string(issues[1].fix)
+    end)
+
+    it("keeps a saved link when a new character makes the note ambiguous", function()
+        local guildData = {}
+        local store = newStore(guildData)
+        store:Update(ROSTER)
+        local grown = { ROSTER[1], ROSTER[2], ROSTER[3],
+            { key = "Dresden Newcomer-Forever", name = "Dresden Newcomer", guid = "G-N", note = "" } }
+        store:Update(grown)
+        assert.are.equal("G-D", store:GetPerson("Malgen Zelwindran-Forever").id)
+        assert.are.equal("ambiguous", store:GetIssues()[1].type)
+
+        local fresh = newStore({})
+        fresh:Update(grown)
+        assert.are.equal("G-M", fresh:GetPerson("Malgen Zelwindran-Forever").id)
     end)
 end)

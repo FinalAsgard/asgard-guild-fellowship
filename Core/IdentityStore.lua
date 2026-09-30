@@ -9,16 +9,18 @@ addon.IdentityStore = IdentityStore
 
 -- `guildData` is the current guild's saved table; resolutions persist there.
 function IdentityStore.New(guildData)
-    local store = setmetatable({ data = guildData, persons = {}, charToPerson = {} }, IdentityStore)
+    local store = setmetatable({ data = guildData, persons = {}, charToPerson = {}, issues = {} }, IdentityStore)
     store.callbacks = LibStub("CallbackHandler-1.0"):New(store)
     return store
 end
 
--- Re-resolves identity from a roster snapshot (see IdentityResolver).
+-- Re-resolves identity from a roster snapshot (see IdentityResolver). The
+-- saved resolutions let ambiguous links keep what they resolved to before.
 function IdentityStore:Update(snapshot)
-    local result = addon.IdentityResolver.resolve(snapshot)
+    local result = addon.IdentityResolver.resolve(snapshot, self.data.resolutions)
     self.persons = result.persons
     self.charToPerson = result.charToPerson
+    self.issues = result.issues
     self.data.resolutions = result.resolutions
     self.callbacks:Fire("IdentityChanged")
 end
@@ -47,4 +49,10 @@ end
 function IdentityStore:GetShortName(personId)
     local person = self.persons[personId]
     return person and person.shortName
+end
+
+-- Problems with the guild's notes: a list of { type, characters, ref, fix }
+-- (see IdentityResolver). Treat it as read-only.
+function IdentityStore:GetIssues()
+    return self.issues
 end
