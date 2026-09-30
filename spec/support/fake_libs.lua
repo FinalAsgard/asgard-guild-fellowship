@@ -89,9 +89,20 @@ function FakeLibs.new()
         ["CallbackHandler-1.0"] = CallbackHandler,
         ["AceDB-3.0"] = {
             New = function(_, savedVariable, defaults)
+                -- A deep copy, like the fresh profile AceDB builds from defaults.
+                local function copy(value)
+                    if type(value) ~= "table" then
+                        return value
+                    end
+                    local result = {}
+                    for key, inner in pairs(value) do
+                        result[key] = copy(inner)
+                    end
+                    return result
+                end
                 log.db = {
                     savedVariable = savedVariable,
-                    profile = { minimap = defaults.profile.minimap },
+                    profile = copy(defaults.profile),
                     global = {},
                 }
                 return log.db

@@ -10,6 +10,7 @@ local DB_DEFAULTS = {
     profile = {
         -- LibDBIcon keeps the minimap button's position here.
         minimap = {},
+        chatTag = addon.ChatTag.DEFAULTS,
     },
 }
 local LAUNCHER_ICON = "Interface\\Icons\\Achievement_GuildPerk_EverybodysFriend"
@@ -22,7 +23,9 @@ function Core:OnInitialize()
             addon.identity:Update(snapshot)
         end
     end)
-    addon.Options.Register()
+    addon.Options.Register(function()
+        return self.db.profile
+    end)
     for _, command in ipairs(addon.Commands.ALWAYS) do
         self:RegisterChatCommand(command, "HandleCommand")
     end
@@ -34,7 +37,9 @@ function Core:OnEnable()
     if not addon.Commands.IsTaken(_G, addon.Commands.SHORT) then
         self:RegisterChatCommand(addon.Commands.SHORT, "HandleCommand")
     end
-    addon.ChatTag.Register()
+    addon.ChatTag.Register(function()
+        return self.db.profile.chatTag
+    end)
     self:RegisterEvent("PLAYER_GUILD_UPDATE", "UpdateGuild")
     self:UpdateGuild()
 end

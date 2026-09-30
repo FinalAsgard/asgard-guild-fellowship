@@ -221,6 +221,65 @@ describe("Core", function()
             assert.are.equal("secret", harness:chat("CHAT_MSG_GUILD", "secret", "Malgen Zelwindran"))
         end)
 
+        it("tags guildmates in every supported channel", function()
+            local _, _, harness = bootWithRoster()
+            for _, event in ipairs({
+                "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER", "CHAT_MSG_PARTY", "CHAT_MSG_PARTY_LEADER", "CHAT_MSG_RAID",
+                "CHAT_MSG_RAID_LEADER", "CHAT_MSG_RAID_WARNING", "CHAT_MSG_INSTANCE_CHAT",
+                "CHAT_MSG_INSTANCE_CHAT_LEADER", "CHAT_MSG_WHISPER", "CHAT_MSG_WHISPER_INFORM",
+            }) do
+                local message, author = harness:chat(event, "hi", "Malgen Zelwindran")
+                assert.are.equal("[Zel] hi", message, event)
+                assert.are.equal("Malgen Zelwindran", author, event)
+            end
+        end)
+
+        it("leaves non-guildmates untagged in group channels and whispers", function()
+            local _, _, harness = bootWithRoster()
+            local events = { "CHAT_MSG_PARTY", "CHAT_MSG_RAID", "CHAT_MSG_INSTANCE_CHAT", "CHAT_MSG_WHISPER" }
+            for _, event in ipairs(events) do
+                assert.are.equal("hi", harness:chat(event, "hi", "Random Stranger"), event)
+            end
+        end)
+
+        it("leaves other channels alone", function()
+            local _, _, harness = bootWithRoster()
+            assert.are.equal("hi", harness:chat("CHAT_MSG_SAY", "hi", "Malgen Zelwindran"))
+            assert.are.equal("hi", harness:chat("CHAT_MSG_CHANNEL", "hi", "Malgen Zelwindran"))
+        end)
+
+        it("applies channel toggles immediately", function()
+            local _, log, harness = bootWithRoster()
+            local channels = log.options.registered.table.args.features.args.chatTag.args.channels.args
+            channels.officer.set(nil, false)
+            assert.is_false(channels.officer.get())
+            assert.are.equal("hi", harness:chat("CHAT_MSG_OFFICER", "hi", "Malgen Zelwindran"))
+            assert.are.equal("[Zel] hi", harness:chat("CHAT_MSG_GUILD", "hi", "Malgen Zelwindran"))
+            channels.whisper.set(nil, false)
+            assert.are.equal("hi", harness:chat("CHAT_MSG_WHISPER", "hi", "Malgen Zelwindran"))
+            assert.are.equal("hi", harness:chat("CHAT_MSG_WHISPER_INFORM", "hi", "Malgen Zelwindran"))
+            channels.officer.set(nil, true)
+            assert.are.equal("[Zel] hi", harness:chat("CHAT_MSG_OFFICER", "hi", "Malgen Zelwindran"))
+        end)
+
+        it("applies appearance changes immediately", function()
+            local _, log, harness = bootWithRoster()
+            local options = log.options.registered.table.args.features.args.chatTag.args
+            options.brackets.set(nil, "angle")
+            assert.are.equal("<Zel> hi", harness:chat("CHAT_MSG_GUILD", "hi", "Malgen Zelwindran"))
+            assert.is_true(options.color.disabled())
+            options.colored.set(nil, true)
+            options.color.set(nil, 1, 0, 0)
+            assert.are.same({ 1, 0, 0 }, { options.color.get() })
+            assert.are.equal("|cffff0000<Zel>|r hi", harness:chat("CHAT_MSG_GUILD", "hi", "Malgen Zelwindran"))
+        end)
+
+        it("skips messages that aren't plain text", function()
+            local _, _, harness = bootWithRoster()
+            assert.is_nil(harness:chat("CHAT_MSG_GUILD", nil, "Malgen Zelwindran"))
+            assert.are.equal("hi", harness:chat("CHAT_MSG_GUILD", "hi", nil))
+        end)
+
         it("stops tagging after leaving the guild", function()
             local ns, _, harness = bootWithRoster()
             harness.options.guild = nil
