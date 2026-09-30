@@ -45,6 +45,7 @@ if [ "${#versions[@]}" -eq 2 ] && [ "${versions[0]}" != "${versions[1]}" ]; then
     fail "production manifests disagree on version: ${versions[0]} vs ${versions[1]}"
 fi
 for version in "${versions[@]}"; do
+    [[ "$version" =~ [^[:space:]] ]] || fail "packaged manifest has no version"
     case "$version" in *@*@*) fail "packaged manifest still has an unreplaced placeholder: $version" ;; esac
     if [ -n "${EXPECTED_VERSION:-}" ] && [ "$version" != "$EXPECTED_VERSION" ]; then
         fail "packaged manifest declares version $version, not the release tag $EXPECTED_VERSION"
