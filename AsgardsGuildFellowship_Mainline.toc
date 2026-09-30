@@ -12,6 +12,7 @@ AsgardsGuildFellowship.lua
 Core\Compat.lua
 Core\GuildData.lua
 Core\Commands.lua
+Core\NoteCodec.lua
 Core\UI.lua
 Core\Options.lua
 Core\Core.lua
