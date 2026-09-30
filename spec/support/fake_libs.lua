@@ -48,6 +48,34 @@ local function newAceAddon(log)
     return aceAddon
 end
 
+-- Like CallbackHandler-1.0: embeds RegisterCallback/UnregisterCallback in the
+-- target and returns a registry with Fire. Handlers are a function, or a
+-- method name on the registering owner.
+local CallbackHandler = {}
+function CallbackHandler.New(_, target)
+    local handlers = {}
+    local registry = {}
+    function registry.Fire(_, event, ...)
+        for owner, handler in pairs(handlers[event] or {}) do
+            if type(handler) == "string" then
+                owner[handler](owner, event, ...)
+            else
+                handler(event, ...)
+            end
+        end
+    end
+    function target.RegisterCallback(owner, event, handler)
+        handlers[event] = handlers[event] or {}
+        handlers[event][owner] = handler or event
+    end
+    function target.UnregisterCallback(owner, event)
+        if handlers[event] then
+            handlers[event][owner] = nil
+        end
+    end
+    return registry
+end
+
 -- Returns a LibStub stand-in and the log it records into. `log.addon` is the
 -- object AceAddon created, `log.db` the AceDB instance, and so on.
 function FakeLibs.new()
@@ -55,6 +83,7 @@ function FakeLibs.new()
     local libs = {
         ["AceAddon-3.0"] = newAceAddon(log),
         ["AceGUI-3.0"] = newAceGUI(log),
+        ["CallbackHandler-1.0"] = CallbackHandler,
         ["AceDB-3.0"] = {
             New = function(_, savedVariable, defaults)
                 log.db = {

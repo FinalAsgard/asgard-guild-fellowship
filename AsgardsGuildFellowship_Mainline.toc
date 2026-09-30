@@ -14,6 +14,7 @@ Core\GuildData.lua
 Core\Commands.lua
 Core\NoteCodec.lua
 Core\IdentityResolver.lua
+Core\IdentityStore.lua
 Core\UI.lua
 Core\Options.lua
 Core\Core.lua
