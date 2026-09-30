@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  # The PRD pipeline watches this check by name (ai/PIPELINE.md). Keep it "test".
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install Lua 5.1
+        uses: leafo/gh-actions-lua@v13
+        with:
+          luaVersion: "5.1"
+
+      - name: Install LuaRocks
+        uses: leafo/gh-actions-luarocks@v6
+
+      - name: Install busted and luacheck
+        run: |
+          luarocks install busted
+          luarocks install luacheck
+
+      - name: Lint and run tests
+        run: luacheck . && busted
+
+  package:
+    name: Release package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Build and validate the multi-client package without uploading
+        run: tools/build-package.sh
+
+      # Keep the validated zip as a download, for example for a manual install.
+      - name: Keep the package as a download
+        uses: actions/upload-artifact@v7
+        with:
+          name: AsgardsGuildFellowship-package
+          path: .release/AsgardsGuildFellowship-*.zip
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 30

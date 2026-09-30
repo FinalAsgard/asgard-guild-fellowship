@@ -6,13 +6,13 @@
 
 `luacheck . && busted`
 
-> Not set up yet. The first implementation issue should add `.luacheckrc` (declaring WoW API globals), `.busted`, and a `spec/` folder so this command runs cleanly.
+> Lua 5.1 tooling. Locally, busted and luacheck live in `~/.luarocks/bin` (see README → Development); make sure it's on `PATH`.
 
 ## CI Check Name
 
 `test`
 
-> Not set up yet. The first implementation issue should add a GitHub Actions workflow with a job named `test` that runs the test command above.
+> The `test` job in `.github/workflows/test.yml`. The same workflow also runs a **Release package** job that builds and validates the zip.
 
 ## Code Review Checks
 
