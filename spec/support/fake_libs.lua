@@ -39,6 +39,9 @@ local function newAceAddon(log)
         function object:RegisterEvent(event, method)
             self.events[event] = method
         end
+        function object:UnregisterEvent(event)
+            self.events[event] = nil
+        end
         function object:Print(message)
             table.insert(self.printed, message)
         end

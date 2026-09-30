@@ -17,6 +17,11 @@ local LAUNCHER_ICON = "Interface\\Icons\\Achievement_GuildPerk_EverybodysFriend"
 function Core:OnInitialize()
     self.db = LibStub("AceDB-3.0"):New("AsgardsGuildFellowshipDB", DB_DEFAULTS, true)
     self.mainPanel = addon.UI.Window({ title = addon.Options.TITLE, width = 600, height = 450 })
+    self.roster = addon.RosterAdapter.New(function(snapshot)
+        if addon.identity then
+            addon.identity:Update(snapshot)
+        end
+    end)
     addon.Options.Register()
     for _, command in ipairs(addon.Commands.ALWAYS) do
         self:RegisterChatCommand(command, "HandleCommand")
@@ -29,6 +34,7 @@ function Core:OnEnable()
     if not addon.Commands.IsTaken(_G, addon.Commands.SHORT) then
         self:RegisterChatCommand(addon.Commands.SHORT, "HandleCommand")
     end
+    addon.ChatTag.Register()
     self:RegisterEvent("PLAYER_GUILD_UPDATE", "UpdateGuild")
     self:UpdateGuild()
 end
@@ -63,9 +69,10 @@ function Core:CreateLauncher()
     LibStub("LibDBIcon-1.0"):Register(addonName, launcher, self.db.profile.minimap)
 end
 
--- Points `addon.guildData` at the current guild's saved data, or nil outside a
--- guild. GetGuildInfo can be empty right after login; PLAYER_GUILD_UPDATE
--- follows once it is known.
+-- Points `addon.guildData` at the current guild's saved data and
+-- `addon.identity` at its IdentityStore, or both at nil outside a guild. The
+-- roster is only watched while in a guild. GetGuildInfo can be empty right
+-- after login; PLAYER_GUILD_UPDATE follows once it is known.
 function Core:UpdateGuild()
     local guildKey
     if IsInGuild() then
@@ -79,4 +86,16 @@ function Core:UpdateGuild()
     end
     self.guildKey = guildKey
     addon.guildData = addon.GuildData.ForGuild(self.db.global, guildKey)
+    if guildKey then
+        addon.identity = addon.IdentityStore.New(addon.guildData)
+        self:RegisterEvent("GUILD_ROSTER_UPDATE", "OnGuildRosterUpdate")
+        self.roster:Request()
+    else
+        addon.identity = nil
+        self:UnregisterEvent("GUILD_ROSTER_UPDATE")
+    end
+end
+
+function Core:OnGuildRosterUpdate(_, canRequestRosterUpdate)
+    self.roster:OnRosterUpdate(canRequestRosterUpdate)
 end

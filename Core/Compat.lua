@@ -73,3 +73,34 @@ function Compat.NormalizeName(name, realm)
     end
     return Compat.BuildNameKey(Compat.flavor, name, realm, playerRealm)
 end
+
+-- The name part of a Name-Realm key.
+function Compat.NameFromKey(key)
+    return key:match("^(.*)%-[^%-]*$") or key
+end
+
+-- Asks the server for fresh roster data; GUILD_ROSTER_UPDATE follows.
+function Compat.RequestGuildRoster()
+    if C_GuildInfo and C_GuildInfo.GuildRoster then
+        C_GuildInfo.GuildRoster()
+    elseif GuildRoster then
+        GuildRoster()
+    end
+end
+
+-- Registers a chat message filter. Returns false when this client offers no
+-- supported way to, so callers degrade to no decoration.
+function Compat.AddMessageEventFilter(event, filter)
+    local add = (ChatFrameUtil and ChatFrameUtil.AddMessageEventFilter) or ChatFrame_AddMessageEventFilter
+    if not add then
+        return false
+    end
+    add(event, filter)
+    return true
+end
+
+-- Retail can hand add-ons "secret" values (e.g. chat inside instances) that
+-- must not be read or altered. Always false where the concept doesn't exist.
+function Compat.IsSecret(value)
+    return issecretvalue ~= nil and issecretvalue(value) == true
+end

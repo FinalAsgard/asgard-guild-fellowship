@@ -121,4 +121,49 @@ describe("Compat", function()
             assert.are.equal("Thrall-Area52", Compat.NormalizeName("Thrall-Area52"))
         end)
     end)
+
+    describe("client helpers", function()
+        it("strips the realm from a key", function()
+            local Compat = loadCompat()
+            assert.are.equal("Dresden Zelwindran", Compat.NameFromKey("Dresden Zelwindran-Forever"))
+            assert.are.equal("Thrall", Compat.NameFromKey("Thrall"))
+        end)
+
+        it("requests the roster through C_GuildInfo", function()
+            local calls = 0
+            local function count() calls = calls + 1 end
+            local Compat = loadCompat({ globals = { C_GuildInfo = { GuildRoster = count } } })
+            Compat.RequestGuildRoster()
+            assert.are.equal(1, calls)
+        end)
+
+        it("falls back to the old GuildRoster global", function()
+            local calls = 0
+            local function count() calls = calls + 1 end
+            local Compat = loadCompat({ globals = { C_GuildInfo = {}, GuildRoster = count } })
+            Compat.RequestGuildRoster()
+            assert.are.equal(1, calls)
+        end)
+
+        it("prefers ChatFrameUtil for chat filters", function()
+            local added = {}
+            local Compat = loadCompat({ globals = { ChatFrameUtil = { AddMessageEventFilter = function(event)
+                table.insert(added, event)
+            end } } })
+            assert.is_true(Compat.AddMessageEventFilter("CHAT_MSG_GUILD", function() end))
+            assert.are.same({ "CHAT_MSG_GUILD" }, added)
+        end)
+
+        it("reports when no chat filter API exists", function()
+            local Compat = loadCompat({ globals = { ChatFrame_AddMessageEventFilter = false } })
+            assert.is_false(Compat.AddMessageEventFilter("CHAT_MSG_GUILD", function() end))
+        end)
+
+        it("treats values as non-secret where the API doesn't exist", function()
+            assert.is_false(loadCompat().IsSecret("text"))
+            local Compat = loadCompat({ globals = { issecretvalue = function(value) return value == "s" end } })
+            assert.is_true(Compat.IsSecret("s"))
+            assert.is_false(Compat.IsSecret("t"))
+        end)
+    end)
 end)

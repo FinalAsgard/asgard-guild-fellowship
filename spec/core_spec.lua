@@ -25,7 +25,10 @@ describe("the add-on in the stub harness", function()
             local ns, log = boot({ manifest = manifest, client = manifest:match("Camelot") and "Forever" or "Retail" })
             assert.are.equal("AsgardsGuildFellowship", log.addon.name)
             assert.are.equal(ns.Core, log.addon)
-            for _, module in ipairs({ "Compat", "GuildData", "Commands", "UI", "Options" }) do
+            for _, module in ipairs({
+                "Compat", "GuildData", "Commands", "NoteCodec", "IdentityResolver", "IdentityStore",
+                "RosterAdapter", "ChatTag", "UI", "Options",
+            }) do
                 assert.is_table(ns[module], module .. " did not attach to the namespace")
             end
         end)
@@ -143,6 +146,86 @@ describe("Core", function()
             harness.options.guild = { name = "Asgard" }
             ns.Core:UpdateGuild()
             assert.are.equal("Asgard-Forever", ns.Core.guildKey)
+        end)
+    end)
+
+    describe("identity in guild chat", function()
+        local ROSTER = {
+            { name = "Dresden Zelwindran", guid = "G-D", note = "@Zel", online = true },
+            { name = "Malgen Zelwindran", guid = "G-M", note = ">Dresden", online = true },
+            { name = "Plain Main", guid = "G-P", note = "", online = true },
+        }
+
+        -- Boots into a Forever guild, then delivers the roster the way the
+        -- client does: an event, then the debounce.
+        local function bootWithRoster()
+            local ns, log, harness = boot({ client = "Forever", guild = { name = "Asgard" }, roster = ROSTER })
+            ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", false)
+            harness:advance(1)
+            return ns, log, harness
+        end
+
+        it("requests the roster when the guild is known", function()
+            local _, _, harness = boot({ client = "Forever", guild = { name = "Asgard" }, roster = ROSTER })
+            assert.are.equal(1, harness.rosterRequests)
+        end)
+
+        it("does not watch the roster outside a guild", function()
+            local ns, log, harness = boot({ roster = ROSTER })
+            assert.is_nil(log.addon.events.GUILD_ROSTER_UPDATE)
+            assert.is_nil(ns.identity)
+            assert.are.equal(0, harness.rosterRequests)
+        end)
+
+        it("resolves people from the roster", function()
+            local ns = bootWithRoster()
+            assert.are.equal("Zel", ns.identity:GetDisplayName("G-D"))
+            assert.are.equal("G-D", ns.identity:GetPerson("Malgen Zelwindran-Forever").id)
+        end)
+
+        it("tags an alt's guild chat line after the player name", function()
+            local _, _, harness = bootWithRoster()
+            local message, author = harness:chat("CHAT_MSG_GUILD", "Anyone want to run a dungeon?",
+                "Malgen Zelwindran", "", "", "Malgen Zelwindran")
+            assert.are.equal("[Zel] Anyone want to run a dungeon?", message)
+            assert.are.equal("Malgen Zelwindran", author)
+        end)
+
+        it("tags a main with an alias", function()
+            local _, _, harness = bootWithRoster()
+            assert.are.equal("[Zel] hi", harness:chat("CHAT_MSG_GUILD", "hi", "Dresden Zelwindran"))
+        end)
+
+        it("leaves a main without alias and unknown speakers untagged", function()
+            local _, _, harness = bootWithRoster()
+            assert.are.equal("hi", harness:chat("CHAT_MSG_GUILD", "hi", "Plain Main"))
+            assert.are.equal("hi", harness:chat("CHAT_MSG_GUILD", "hi", "Stranger"))
+        end)
+
+        it("passes the remaining chat arguments through unchanged", function()
+            local _, _, harness = bootWithRoster()
+            local seen
+            harness.env.ChatFrame_AddMessageEventFilter("CHAT_MSG_GUILD", function(_, _, ...)
+                seen = { ... }
+                return false
+            end)
+            harness:chat("CHAT_MSG_GUILD", "hi", "Malgen Zelwindran", "Common", "", "", "", 0, 0, "", 0, 42, "GUID-M")
+            assert.are.same({ "[Zel] hi", "Malgen Zelwindran", "Common", "", "", "", 0, 0, "", 0, 42, "GUID-M" }, seen)
+        end)
+
+        it("leaves secret chat values alone", function()
+            local _, _, harness = bootWithRoster()
+            harness.env.issecretvalue = function(value)
+                return value == "secret"
+            end
+            assert.are.equal("secret", harness:chat("CHAT_MSG_GUILD", "secret", "Malgen Zelwindran"))
+        end)
+
+        it("stops tagging after leaving the guild", function()
+            local ns, _, harness = bootWithRoster()
+            harness.options.guild = nil
+            ns.Core:UpdateGuild()
+            assert.are.equal("hi", harness:chat("CHAT_MSG_GUILD", "hi", "Malgen Zelwindran"))
         end)
     end)
 end)
