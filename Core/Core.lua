@@ -3,14 +3,18 @@ local addonName, addon = ...
 -- Wires the add-on into the game: saved variables, slash commands, the
 -- launcher, the settings panel, and the current guild. Features start from here
 -- only once the player is in a guild.
-local Core = LibStub("AceAddon-3.0"):NewAddon(addonName, "AceConsole-3.0", "AceEvent-3.0")
+local Core = LibStub("AceAddon-3.0"):NewAddon(addonName, "AceConsole-3.0", "AceEvent-3.0", "AceComm-3.0")
 addon.Core = Core
+
+-- The one addon-message prefix every sync message uses (16 characters at most).
+Core.COMM_PREFIX = "AGFellowship"
 
 local DB_DEFAULTS = {
     profile = {
         -- LibDBIcon keeps the minimap button's position here.
         minimap = {},
         chatTag = addon.ChatTag.DEFAULTS,
+        sync = { enabled = true },
     },
 }
 local LAUNCHER_ICON = "Interface\\Icons\\Achievement_GuildPerk_EverybodysFriend"
@@ -21,6 +25,8 @@ function Core:OnInitialize()
     self.roster = addon.RosterAdapter.New(function(snapshot)
         if addon.identity then
             addon.identity:Update(snapshot)
+            -- Sync starts once there is a roster to compare against.
+            self.sync:Start()
         end
     end)
     addon.Options.Register(function()
@@ -30,6 +36,7 @@ function Core:OnInitialize()
         self:RegisterChatCommand(command, "HandleCommand")
     end
     self:CreateLauncher()
+    self:RegisterComm(Core.COMM_PREFIX, "OnCommReceived")
 end
 
 -- Runs at login, after every add-on has loaded, so any other owner of /gf is known.
@@ -100,7 +107,7 @@ end
 
 -- Points `addon.guildData` at the current guild's saved data and
 -- `addon.identity` at its IdentityStore, or both at nil outside a guild. The
--- roster is only watched while in a guild. GetGuildInfo can be empty right
+-- roster is only watched, and sync only runs, while in a guild. GetGuildInfo can be empty right
 -- after login; PLAYER_GUILD_UPDATE follows once it is known.
 function Core:UpdateGuild()
     local guildKey
@@ -115,8 +122,14 @@ function Core:UpdateGuild()
     end
     self.guildKey = guildKey
     addon.guildData = addon.GuildData.ForGuild(self.db.global, guildKey)
+    if self.sync then
+        self.sync:Stop()
+        self.sync = nil
+    end
     if guildKey then
         addon.identity = addon.IdentityStore.New(addon.guildData)
+        self.sync = self:NewSync()
+        self.sync:RegisterType("resolution", addon.identity:ResolutionSyncHandler())
         self:RegisterEvent("GUILD_ROSTER_UPDATE", "OnGuildRosterUpdate")
         self.roster:Request()
     else
@@ -127,4 +140,27 @@ end
 
 function Core:OnGuildRosterUpdate(_, canRequestRosterUpdate)
     self.roster:OnRosterUpdate(canRequestRosterUpdate)
+end
+
+function Core:NewSync()
+    local name, realm = UnitName("player")
+    return addon.Sync.New({
+        send = function(message, priority)
+            self:SendCommMessage(Core.COMM_PREFIX, message, "GUILD", nil, priority)
+        end,
+        after = C_Timer.After,
+        random = math.random,
+        now = GetTime,
+        player = addon.Compat.NormalizeName(name, realm),
+        enabled = function()
+            return self.db.profile.sync.enabled
+        end,
+    })
+end
+
+function Core:OnCommReceived(prefix, message, distribution, sender)
+    if prefix ~= Core.COMM_PREFIX or distribution ~= "GUILD" or not self.sync or type(sender) ~= "string" then
+        return
+    end
+    self.sync:OnMessage(message, addon.Compat.NormalizeName(sender))
 end

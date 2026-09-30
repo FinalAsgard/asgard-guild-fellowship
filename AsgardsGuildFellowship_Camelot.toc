@@ -14,12 +14,15 @@ Core\GuildData.lua
 Core\Commands.lua
 Core\NoteCodec.lua
 Core\IdentityResolver.lua
+Core\SyncMerge.lua
 Core\IdentityStore.lua
 Core\RosterAdapter.lua
 Core\ChatTag.lua
 Core\TooltipFormatter.lua
 Core\Tooltip.lua
 Core\WhoFormatter.lua
+Core\Protocol.lua
+Core\Sync.lua
 Core\UI.lua
 Core\Options.lua
 Core\Core.lua

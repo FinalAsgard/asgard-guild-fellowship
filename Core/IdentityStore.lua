@@ -23,6 +23,7 @@ end
 -- Re-resolves identity from a roster snapshot (see IdentityResolver). The
 -- saved resolutions let ambiguous links keep what they resolved to before.
 function IdentityStore:Update(snapshot)
+    self.snapshot = snapshot
     local result = addon.IdentityResolver.resolve(snapshot, self.data.resolutions)
     self.persons = result.persons
     self.charToPerson = result.charToPerson
@@ -108,4 +109,50 @@ function IdentityStore:FindByQuery(text)
         return a.id < b.id
     end)
     return results
+end
+
+-- The Sync record-type handler for identity resolutions (record type
+-- "resolution"). Only links this client currently uses are shared. Received
+-- links go through SyncMerge and, once accepted, become cached resolutions, so
+-- the resolver can fill an ambiguous link with them while still flagging it.
+function IdentityStore:ResolutionSyncHandler()
+    local function shared(altKey)
+        local record = (self.data.resolutions or {})[altKey]
+        if record and record.main and self.charToPerson[altKey] == record.main then
+            return record
+        end
+    end
+    return {
+        Versions = function()
+            local versions = {}
+            for altKey in pairs(self.data.resolutions or {}) do
+                if shared(altKey) then
+                    versions[altKey] = 1
+                end
+            end
+            return versions
+        end,
+        Get = function(altKey)
+            local record = shared(altKey)
+            return record and { target = record.target, ref = record.ref }
+        end,
+        Receive = function(altKey, record)
+            local resolutions = self.data.resolutions or {}
+            local existing = resolutions[altKey]
+            if existing and type(record) == "table" and existing.target == record.target then
+                return false
+            end
+            if not addon.SyncMerge.Resolution(altKey, record, self.snapshot or {}, resolutions) then
+                return false
+            end
+            resolutions[altKey] = { target = record.target, ref = record.ref }
+            self.data.resolutions = resolutions
+            return true
+        end,
+        Commit = function()
+            if self.snapshot then
+                self:Update(self.snapshot)
+            end
+        end,
+    }
 end

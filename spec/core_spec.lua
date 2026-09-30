@@ -402,4 +402,78 @@ describe("Core", function()
             assert.truthy(log.addon.printed[1]:find("Usage", 1, true))
         end)
     end)
+
+    describe("sync", function()
+        local EARLY = {
+            { name = "Dresden Zelwindran", guid = "G-D", note = "@Zel" },
+            { name = "Malgen", guid = "G-M", note = ">Dresden" },
+        }
+        local FULL = { EARLY[1], EARLY[2], { name = "Dresden Other", guid = "G-O", note = "" } }
+
+        local function client(name, rosters)
+            local ns, log, harness = boot({
+                client = "Forever", guild = { name = "Asgard" }, roster = rosters[1],
+                units = { player = { name = name, player = true } },
+            })
+            for index, roster in ipairs(rosters) do
+                harness.options.roster = roster
+                ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", index > 1)
+                harness:advance(1)
+            end
+            return { name = name, ns = ns, log = log, harness = harness }
+        end
+
+        -- Delivers everything each client sent over AceComm to the other one.
+        local function run(a, b, seconds)
+            for _ = 1, seconds do
+                for _, pair in ipairs({ { a, b }, { b, a } }) do
+                    local from, to = pair[1], pair[2]
+                    local sent = from.log.addon.sent
+                    from.log.addon.sent = {}
+                    for _, message in ipairs(sent) do
+                        to.ns.Core:OnCommReceived(message.prefix, message.message, message.distribution, from.name)
+                    end
+                end
+                a.harness:advance(1)
+                b.harness:advance(1)
+            end
+        end
+
+        it("registers one prefix and sends on the guild channel", function()
+            local c = client("Veteran", { FULL })
+            assert.are.equal("OnCommReceived", c.log.addon.comms.AGFellowship)
+            c.harness:advance(20)
+            local sent = c.log.addon.sent[1]
+            assert.are.equal("AGFellowship", sent.prefix)
+            assert.are.equal("GUILD", sent.distribution)
+        end)
+
+        it("fills a newcomer's ambiguous link from a veteran through the add-on channel", function()
+            local veteran = client("Veteran", { EARLY, FULL })
+            local newcomer = client("Newcomer", { FULL })
+            assert.are.equal("G-M", newcomer.ns.identity:GetPerson("Malgen-Forever").id)
+            run(veteran, newcomer, 40)
+            assert.are.equal("G-D", newcomer.ns.identity:GetPerson("Malgen-Forever").id)
+            assert.are.equal("G-D", veteran.ns.identity:GetPerson("Malgen-Forever").id)
+        end)
+
+        it("sends and accepts nothing when sync is turned off in settings", function()
+            local veteran = client("Veteran", { EARLY, FULL })
+            local newcomer = client("Newcomer", { FULL })
+            local toggle = newcomer.log.options.registered.table.args.features.args.sync
+            toggle.set(nil, false)
+            assert.is_false(toggle.get())
+            run(veteran, newcomer, 40)
+            assert.are.equal("G-M", newcomer.ns.identity:GetPerson("Malgen-Forever").id)
+            assert.are.same({}, newcomer.log.addon.sent)
+        end)
+
+        it("ignores other prefixes and non-guild distribution", function()
+            local c = client("Newcomer", { FULL })
+            c.ns.Core:OnCommReceived("OtherAddon", "x", "GUILD", "Someone")
+            c.ns.Core:OnCommReceived("AGFellowship", "x", "WHISPER", "Someone")
+            c.ns.Core:OnCommReceived("AGFellowship", "garbage", "GUILD", "Someone")
+            assert.are.equal("G-M", c.ns.identity:GetPerson("Malgen-Forever").id)
+        end)
+    end)
 end)

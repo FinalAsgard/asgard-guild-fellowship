@@ -35,6 +35,37 @@ local function sortedKeys(members)
     return keys
 end
 
+-- Lookup tables over a snapshot, shared by resolve and SyncMerge:
+--   members[key], byKey[lowered key], byFullName[lowered name], byFirstName[lowered first name],
+--   notes[key] (parsed notes)
+function IdentityResolver.Index(snapshot)
+    local index = { members = {}, byKey = {}, byFullName = {}, byFirstName = {}, notes = {} }
+    for _, member in ipairs(snapshot) do
+        local lowered = member.name:lower()
+        index.members[member.key] = member
+        index.byKey[member.key:lower()] = { member }
+        addTo(index.byFullName, lowered, member)
+        addTo(index.byFirstName, firstName(lowered), member)
+        index.notes[member.key] = addon.NoteCodec.parse(member.note)
+    end
+    return index
+end
+
+-- Everyone `ref` could mean, other than `exclude`. `Name-Realm` names one
+-- character exactly; otherwise an exact full name wins over a first-name match.
+-- The second result counts matches before `exclude` was removed.
+function IdentityResolver.Candidates(index, ref, exclude)
+    local lowered = ref:lower()
+    local matches = index.byKey[lowered] or index.byFullName[lowered] or index.byFirstName[firstName(lowered)] or {}
+    local candidates = {}
+    for _, candidate in ipairs(matches) do
+        if candidate ~= exclude then
+            table.insert(candidates, candidate)
+        end
+    end
+    return candidates, #matches
+end
+
 -- resolve(snapshot, cachedResolutions) -> { persons, charToPerson, resolutions, issues }
 --   snapshot: list of { key, guid, name, note, ... } (key is Name-Realm, name has no realm)
 --   cachedResolutions: the `resolutions` from an earlier run, or nil
@@ -47,14 +78,8 @@ end
 --     ambiguous, chain, cycle, orphan, unresolved
 function IdentityResolver.resolve(snapshot, cachedResolutions)
     cachedResolutions = cachedResolutions or {}
-    local byKey, byFullName, byFirstName, notes = {}, {}, {}, {}
-    for _, member in ipairs(snapshot) do
-        local lowered = member.name:lower()
-        byKey[member.key:lower()] = { member }
-        addTo(byFullName, lowered, member)
-        addTo(byFirstName, firstName(lowered), member)
-        notes[member.key] = addon.NoteCodec.parse(member.note)
-    end
+    local index = IdentityResolver.Index(snapshot)
+    local byFullName, byFirstName, notes = index.byFullName, index.byFirstName, index.notes
 
     -- The shortest name that picks out one character: the first name, then the
     -- full name, then Name-Realm (only needed for same-name cross-realm members).
@@ -74,24 +99,12 @@ function IdentityResolver.resolve(snapshot, cachedResolutions)
         table.insert(issues, { type = issueType, characters = characters, ref = ref, fix = fix })
     end
 
-    -- Everyone `ref` could mean. `Name-Realm` names one character exactly;
-    -- otherwise an exact full name wins over a first-name match.
-    local function candidatesFor(ref)
-        local lowered = ref:lower()
-        return byKey[lowered] or byFullName[lowered] or byFirstName[firstName(lowered)] or {}
-    end
-
     -- Step 1: each alt's direct target.
     local targets, orphaned = {}, {}
     for _, member in ipairs(snapshot) do
         local ref = notes[member.key].mainRef
         if ref then
-            local candidates = {}
-            for _, candidate in ipairs(candidatesFor(ref)) do
-                if candidate ~= member then
-                    table.insert(candidates, candidate)
-                end
-            end
+            local candidates, matchCount = IdentityResolver.Candidates(index, ref, member)
             local cached = cachedResolutions[member.key]
             local cachedStillFits = cached and cached.ref and cached.ref:lower() == ref:lower()
             if #candidates == 1 then
@@ -107,7 +120,7 @@ function IdentityResolver.resolve(snapshot, cachedResolutions)
                 table.sort(names)
                 raise("ambiguous", { member.key }, ref, ("%s's note >%s matches %s. Use one of those names instead.")
                     :format(member.name, ref, table.concat(names, ", ")))
-            elseif #candidatesFor(ref) == 0 then
+            elseif matchCount == 0 then
                 if cachedStillFits then
                     -- Keep the old link on record so the alt stays an orphan
                     -- rather than turning "unresolved" on the next update.

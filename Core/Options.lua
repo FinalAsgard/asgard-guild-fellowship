@@ -109,6 +109,20 @@ function Options.Build(profile)
                     chatTag = chatTagGroup(function()
                         return profile().chatTag
                     end),
+                    sync = {
+                        type = "toggle",
+                        name = "Sync with other add-on users",
+                        desc = "Share identity links with guildmates who use the add-on, and receive theirs. "
+                            .. "Turn off to stop sending and receiving.",
+                        width = "full",
+                        order = 2,
+                        get = function()
+                            return profile().sync.enabled
+                        end,
+                        set = function(_, value)
+                            profile().sync.enabled = value
+                        end,
+                    },
                 },
             },
         },

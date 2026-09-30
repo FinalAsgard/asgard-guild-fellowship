@@ -2,6 +2,8 @@
 -- so specs can check the wiring without loading the real Ace3 stack (which
 -- needs frames). Only the calls the add-on makes are faked.
 
+local realLibs = require("support.real_libs")
+
 local FakeLibs = {}
 
 local function newAceGUI(log)
@@ -35,6 +37,15 @@ local function newAceAddon(log)
         local object = { name = name, commands = {}, events = {}, printed = {} }
         function object:RegisterChatCommand(command, method)
             self.commands[command] = method
+        end
+        object.comms, object.sent = {}, {}
+        function object:RegisterComm(prefix, method)
+            self.comms[prefix] = method
+        end
+        function object:SendCommMessage(prefix, message, distribution, target, priority)
+            table.insert(self.sent, {
+                prefix = prefix, message = message, distribution = distribution, target = target, priority = priority,
+            })
         end
         function object:RegisterEvent(event, method)
             self.events[event] = method
@@ -87,6 +98,9 @@ function FakeLibs.new()
         ["AceAddon-3.0"] = newAceAddon(log),
         ["AceGUI-3.0"] = newAceGUI(log),
         ["CallbackHandler-1.0"] = CallbackHandler,
+        -- The serializer and compressor are pure Lua, so specs use the real ones.
+        ["AceSerializer-3.0"] = realLibs()["AceSerializer-3.0"],
+        LibDeflate = realLibs().LibDeflate,
         ["AceDB-3.0"] = {
             New = function(_, savedVariable, defaults)
                 -- A deep copy, like the fresh profile AceDB builds from defaults.
