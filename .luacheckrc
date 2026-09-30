@@ -6,6 +6,10 @@ exclude_files = { ".release/", "Libs/", ".luarocks/", "lua_modules/" }
 read_globals = {
     "C_AddOns",
     "GetAddOnMetadata",
+    "GetGuildInfo",
+    "GetNormalizedRealmName",
+    "IsInGuild",
+    "LibStub",
 }
 
 files["spec/"] = { std = "+busted" }

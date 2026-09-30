@@ -32,6 +32,10 @@ export PATH="$HOME/.luarocks/bin:$PATH"
 
 CI runs the same command (the `test` check) on every pull request, and builds the release package.
 
+Tests load add-on files through a small WoW API stub harness (`spec/support/wow.lua`). It stubs only the APIs the add-on calls, so add a stub there when new code calls a new API. `spec/support/fake_libs.lua` stands in for the embedded libraries.
+
+Embedded libraries (Ace3, LibDeflate, LibDataBroker, LibDBIcon) are vendored in `Libs/` at pinned versions, so a plain checkout loads in game. See [`Libs/README.md`](Libs/README.md). Feature screens go through the internal UI layer (`Core/UI.lua`), never AceGUI directly.
+
 To update a client's interface version, run `tools/set-interface.sh <forever|retail> <interface>`.
 
 ## Releases

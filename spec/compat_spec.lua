@@ -1,0 +1,124 @@
+local Harness = require("support.wow")
+
+local function loadCompat(options)
+    local ns = Harness.new(options):loadAll({ "AsgardsGuildFellowship.lua", "Core/Compat.lua" })
+    return ns.Compat
+end
+
+describe("Compat", function()
+    describe("flavor detection", function()
+        it("reads Forever from the manifest's X-Client", function()
+            assert.are.equal("Forever", loadCompat({ client = "Forever" }).flavor)
+        end)
+
+        it("reads Retail from the manifest's X-Client", function()
+            assert.are.equal("Retail", loadCompat({ client = "Retail" }).flavor)
+        end)
+
+        it("treats an unknown or missing client as Retail", function()
+            local Compat = loadCompat()
+            assert.are.equal("Retail", Compat.DetectFlavor(nil))
+            assert.are.equal("Retail", Compat.DetectFlavor("Classic"))
+        end)
+    end)
+
+    describe("BuildNameKey on Forever", function()
+        local Compat = loadCompat({ client = "Forever" })
+        local function key(name, realm, playerRealm)
+            return Compat.BuildNameKey(Compat.FOREVER, name, realm, playerRealm)
+        end
+
+        it("adds the fixed realm to a bare name", function()
+            assert.are.equal("Dresden Zelwindran-Forever", key("Dresden Zelwindran"))
+        end)
+
+        it("ignores a realm suffix from the API", function()
+            assert.are.equal("Dresden Zelwindran-Forever", key("Dresden Zelwindran-Camelot"))
+        end)
+
+        it("ignores an explicit realm argument", function()
+            assert.are.equal("Dresden Zelwindran-Forever", key("Dresden Zelwindran", "Camelot"))
+        end)
+
+        it("ignores the player's realm", function()
+            assert.are.equal("Malgen-Forever", key("Malgen", nil, "SomeRealm"))
+        end)
+
+        it("keeps a one-word name", function()
+            assert.are.equal("Malgen-Forever", key("Malgen"))
+        end)
+
+        it("trims and collapses whitespace in two-word names", function()
+            assert.are.equal("Dresden Zelwindran-Forever", key("  Dresden   Zelwindran  "))
+        end)
+
+        it("returns nil for a missing or empty name", function()
+            assert.is_nil(key(nil))
+            assert.is_nil(key(""))
+            assert.is_nil(key("   "))
+            assert.is_nil(key("-Camelot"))
+        end)
+    end)
+
+    describe("BuildNameKey on Retail", function()
+        local Compat = loadCompat({ client = "Retail" })
+        local function key(name, realm, playerRealm)
+            return Compat.BuildNameKey(Compat.RETAIL, name, realm, playerRealm)
+        end
+
+        it("fills a missing realm with the player's realm", function()
+            assert.are.equal("Thrall-Stormrage", key("Thrall", nil, "Stormrage"))
+        end)
+
+        it("keeps a realm suffix from the API", function()
+            assert.are.equal("Thrall-Area52", key("Thrall-Area52", nil, "Stormrage"))
+        end)
+
+        it("uses an explicit realm argument", function()
+            assert.are.equal("Thrall-Area52", key("Thrall", "Area52", "Stormrage"))
+        end)
+
+        it("prefers an explicit realm argument over a suffix", function()
+            assert.are.equal("Thrall-Area52", key("Thrall-Stormrage", "Area52", "Stormrage"))
+        end)
+
+        it("normalizes realm names with spaces or hyphens", function()
+            assert.are.equal("Thrall-Area52", key("Thrall", "Area 52", "Stormrage"))
+            assert.are.equal("Thrall-AzjolNerub", key("Thrall-Azjol-Nerub", nil, "Stormrage"))
+        end)
+
+        it("treats an empty realm as missing", function()
+            assert.are.equal("Thrall-Stormrage", key("Thrall", "", "Stormrage"))
+            assert.are.equal("Thrall-Stormrage", key("Thrall-", nil, "Stormrage"))
+        end)
+
+        it("keeps the same name on different realms apart", function()
+            assert.are_not.equal(key("Thrall", "Area52"), key("Thrall", "Stormrage"))
+        end)
+
+        it("preserves two-word names", function()
+            assert.are.equal("Dresden Zelwindran-Stormrage", key("Dresden Zelwindran", nil, "Stormrage"))
+        end)
+
+        it("returns nil when no realm is known yet", function()
+            assert.is_nil(key("Thrall", nil, nil))
+        end)
+
+        it("returns nil for a missing name", function()
+            assert.is_nil(key(nil, "Area52", "Stormrage"))
+        end)
+    end)
+
+    describe("NormalizeName", function()
+        it("uses the fixed realm on Forever without asking the API", function()
+            local Compat = loadCompat({ client = "Forever", realm = "Camelot" })
+            assert.are.equal("Dresden Zelwindran-Forever", Compat.NormalizeName("Dresden Zelwindran", "Camelot"))
+        end)
+
+        it("uses the player's normalized realm on Retail", function()
+            local Compat = loadCompat({ client = "Retail", realm = "Stormrage" })
+            assert.are.equal("Thrall-Stormrage", Compat.NormalizeName("Thrall"))
+            assert.are.equal("Thrall-Area52", Compat.NormalizeName("Thrall-Area52"))
+        end)
+    end)
+end)
