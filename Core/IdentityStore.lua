@@ -72,3 +72,40 @@ end
 function IdentityStore:GetIssues()
     return self.issues
 end
+
+-- People matching `text`: a character's full name, Name-Realm, or first name,
+-- or a person's alias. Case-insensitive; surrounding quotes and extra spaces
+-- are ignored, so two-word names work quoted or not. Sorted by display name.
+function IdentityStore:FindByQuery(text)
+    local query = (text or ""):gsub('^%s*["\']', ""):gsub('["\']%s*$', ""):gsub("%s+", " ")
+    query = query:gsub("^ ", ""):gsub(" $", ""):lower()
+    if query == "" then
+        return {}
+    end
+    local found, results = {}, {}
+    local function add(personId)
+        local person = personId and self.persons[personId]
+        if person and not found[personId] then
+            found[personId] = true
+            table.insert(results, person)
+        end
+    end
+    for key, member in pairs(self.members) do
+        local name = member.name:lower()
+        if name == query or key:lower() == query or name:match("^(%S+)") == query then
+            add(self.charToPerson[key])
+        end
+    end
+    for id, person in pairs(self.persons) do
+        if person.alias and person.alias:lower() == query then
+            add(id)
+        end
+    end
+    table.sort(results, function(a, b)
+        if a.displayName ~= b.displayName then
+            return a.displayName < b.displayName
+        end
+        return a.id < b.id
+    end)
+    return results
+end

@@ -19,6 +19,7 @@ Core\RosterAdapter.lua
 Core\ChatTag.lua
 Core\TooltipFormatter.lua
 Core\Tooltip.lua
+Core\WhoFormatter.lua
 Core\UI.lua
 Core\Options.lua
 Core\Core.lua

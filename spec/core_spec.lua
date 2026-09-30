@@ -76,7 +76,7 @@ describe("Core", function()
         it("prints usage for an unknown command", function()
             local ns, log = boot()
             ns.Core:HandleCommand("dance")
-            assert.are.equal(1, #log.addon.printed)
+            assert.are.equal(2, #log.addon.printed)
             assert.is_false(ns.Core.mainPanel:IsShown())
         end)
     end)
@@ -365,6 +365,41 @@ describe("Core", function()
             harness.tooltip:AddLine("Some item")
             harness.tooltip:Show()
             assert.are.same({ "Some item" }, lefts(harness.tooltip.lines))
+        end)
+    end)
+
+    describe("/fellowship who", function()
+        it("prints the matching person", function()
+            local ns, log, harness = boot({
+                client = "Forever",
+                guild = { name = "Asgard" },
+                roster = {
+                    { name = "Dresden Zelwindran", guid = "G-D", note = "@Zel", online = false, level = 60,
+                        className = "Warrior" },
+                    { name = "Malgen Zelwindran", guid = "G-M", note = ">Dresden", online = false },
+                },
+            })
+            ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", false)
+            harness:advance(1)
+            ns.Core:HandleCommand("who Malgen Zelwindran")
+            assert.are.same({
+                "Zel (main: Dresden Zelwindran)",
+                "  Dresden Zelwindran (main) - 60 Warrior - offline",
+                "  Malgen Zelwindran - offline",
+            }, log.addon.printed)
+        end)
+
+        it("explains when not in a guild", function()
+            local ns, log = boot()
+            ns.Core:HandleCommand("who Zel")
+            assert.are.same({ "You're not in a guild, or the roster hasn't loaded yet." }, log.addon.printed)
+        end)
+
+        it("prints usage without a query", function()
+            local ns, log = boot()
+            ns.Core:HandleCommand("who")
+            assert.are.equal(1, #log.addon.printed)
+            assert.truthy(log.addon.printed[1]:find("Usage", 1, true))
         end)
     end)
 end)

@@ -53,10 +53,33 @@ function Core:HandleCommand(input)
         version = function()
             self:Print("version " .. tostring(addon.version))
         end,
+        who = function(query)
+            self:Who(query)
+        end,
         usage = function()
             self:Print("/fellowship opens the main panel. /fellowship version prints the version.")
+            self:Print("/fellowship who <name> looks up a guildmate by character name, first name, or alias.")
         end,
     })
+end
+
+-- /gf who <query>
+function Core:Who(query)
+    if query == "" then
+        self:Print("Usage: /fellowship who <character name, first name, or alias>")
+        return
+    end
+    local store = addon.identity
+    if not store then
+        self:Print("You're not in a guild, or the roster hasn't loaded yet.")
+        return
+    end
+    local lines = addon.WhoFormatter.Lines(query, store:FindByQuery(query), function(key)
+        return store:GetCharacterInfo(key)
+    end)
+    for _, line in ipairs(lines) do
+        self:Print(line)
+    end
 end
 
 function Core:CreateLauncher()
