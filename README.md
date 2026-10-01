@@ -4,6 +4,16 @@ A World of Warcraft add-on that helps guild members know each other, recognize e
 
 > Early development. See [`ai/VISION.md`](ai/VISION.md) for the product vision and the open `prd` issues for what's being built.
 
+## Features
+
+**Identity.** Short guild-note markers (`>Main` on alts, `@Alias` on mains) let the add-on group characters into people. It then shows who's who in chat tags, tooltips, and `/gf who`. It also includes:
+
+- synced profiles (Discord contact, alias, bio),
+- an Identity Issues view and Note Helper for officers,
+- quiet sync between add-on users.
+
+See [`docs/identity.md`](docs/identity.md) for the note convention and how to use it.
+
 ## Supported clients
 
 | Client | Manifest | Interface |
