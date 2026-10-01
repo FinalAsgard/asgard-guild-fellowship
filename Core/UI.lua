@@ -130,3 +130,59 @@ function Window:AddInput(label, text, onChange)
     end)
     self.content:AddChild(input)
 end
+
+local Prompt = {}
+Prompt.__index = Prompt
+
+-- A small pop-up with a line of text and buttons, e.g. a greeting prompt.
+-- `options`: title, width, height. Closing it with its X counts as dismissing,
+-- and runs options.onClose.
+function UI.Prompt(options)
+    return setmetatable({ options = options }, Prompt)
+end
+
+-- Shows (or replaces) the prompt's content. `buttons` is a list of
+-- { text, onClick }.
+function Prompt:Show(text, buttons)
+    if not self.frame then
+        local frame = aceGUI():Create("Window")
+        frame:SetTitle(self.options.title)
+        frame:SetWidth(self.options.width)
+        frame:SetHeight(self.options.height)
+        frame:SetLayout("Flow")
+        frame:SetCallback("OnClose", function(widget)
+            self.frame = nil
+            aceGUI():Release(widget)
+            if self.options.onClose and not self.hiding then
+                self.options.onClose()
+            end
+        end)
+        self.frame = frame
+    end
+    self.frame:ReleaseChildren()
+    local label = aceGUI():Create("Label")
+    label:SetText(text)
+    label:SetFullWidth(true)
+    self.frame:AddChild(label)
+    for _, spec in ipairs(buttons) do
+        local button = aceGUI():Create("Button")
+        button:SetText(spec.text)
+        button:SetCallback("OnClick", function()
+            spec.onClick()
+        end)
+        self.frame:AddChild(button)
+    end
+end
+
+-- Hides the prompt without running onClose.
+function Prompt:Hide()
+    if self.frame then
+        self.hiding = true
+        self.frame:Hide()
+        self.hiding = false
+    end
+end
+
+function Prompt:IsShown()
+    return self.frame ~= nil
+end

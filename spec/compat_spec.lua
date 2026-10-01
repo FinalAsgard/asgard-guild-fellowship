@@ -220,5 +220,33 @@ describe("Compat", function()
             assert.is_false(Compat.SetPublicNote({ key = "A-Realm" }, ">B"))
             assert.is_false(Compat.CanEditPublicNote())
         end)
+
+        it("builds a pattern from a localized format string", function()
+            local Compat = loadCompat()
+            local pattern = Compat.PatternFromFormat("%s has joined the guild.")
+            assert.are.equal("Mike Hunter", ("Mike Hunter has joined the guild."):match(pattern))
+            assert.is_nil(("Mike has joined the guild!"):match(pattern))
+            assert.are.same({ "a", "b" }, { ("[a] and (b)"):match(Compat.PatternFromFormat("[%1$s] and (%2$s)")) })
+            assert.is_nil(Compat.PatternFromFormat(nil))
+            assert.is_nil(Compat.PatternFromFormat(""))
+        end)
+
+        it("reads the name from a has-come-online message", function()
+            local Compat = loadCompat({ globals = { ERR_FRIEND_ONLINE_SS = "|Hplayer:%s|h[%s]|h has come online." } })
+            assert.are.equal("Malgen Zelwindran",
+                Compat.OnlineMessageName("|Hplayer:Malgen Zelwindran|h[Malgen Zelwindran]|h has come online."))
+            assert.is_nil(Compat.OnlineMessageName("Kira has gone offline."))
+            assert.is_nil(Compat.OnlineMessageName(nil))
+            assert.is_nil(loadCompat({ globals = { ERR_FRIEND_ONLINE_SS = false } }).OnlineMessageName("x"))
+        end)
+
+        it("sends guild messages on the guild channel", function()
+            local sent
+            local Compat = loadCompat({ globals = { SendChatMessage = function(text, channel)
+                sent = { text, channel }
+            end } })
+            Compat.SendGuildMessage("Hi!")
+            assert.are.same({ "Hi!", "GUILD" }, sent)
+        end)
     end)
 end)

@@ -260,6 +260,21 @@ function Options.Build(profile, guild)
                     chatTag = chatTagGroup(function()
                         return profile().chatTag
                     end),
+                    greet = {
+                        type = "toggle",
+                        name = "Guild Greet",
+                        desc = "When guildmates come online, show a prompt to greet them in guild chat. "
+                            .. "Nothing is posted unless you click Greet.",
+                        width = "full",
+                        order = 3,
+                        get = function()
+                            return profile().greet.enabled
+                        end,
+                        set = function(_, value)
+                            profile().greet.enabled = value
+                            guild.GreetToggled()
+                        end,
+                    },
                     sync = {
                         type = "toggle",
                         name = "Sync with other add-on users",

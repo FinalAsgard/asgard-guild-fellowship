@@ -930,4 +930,148 @@ describe("Core", function()
             assert.are.same({}, harness.notesWritten)
         end)
     end)
+
+    describe("Guild Greet", function()
+        local function roster()
+            return {
+                { name = "Me", guid = "G-ME", note = "", online = true },
+                { name = "Dresden Zelwindran", guid = "G-D", note = "@Zel", online = false },
+                { name = "Malgen", guid = "G-M", note = ">Dresden", online = false },
+                { name = "Kira", guid = "G-K", note = "", online = false },
+                { name = "Mine Alt", guid = "G-A", note = ">Me", online = false },
+            }
+        end
+
+        local function start(enabled, initiallyOnline)
+            local initial = roster()
+            for _, index in ipairs(initiallyOnline or {}) do
+                initial[index].online = true
+            end
+            local ns, log, harness = boot({
+                client = "Forever", guild = { name = "Asgard" }, roster = initial,
+                units = { player = { name = "Me", player = true } },
+            })
+            if enabled then
+                log.options.registered.table.args.features.args.greet.set(nil, true)
+            end
+            local function update()
+                ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", false)
+                harness:advance(1)
+            end
+            update()
+            local function online(index, value)
+                harness.options.roster[index].online = value
+                update()
+            end
+            -- The greet prompt's text and buttons, or nil when it isn't shown.
+            local function prompt()
+                local window
+                for _, widget in ipairs(log.AceGUI.created) do
+                    if widget.kind == "Window" and widget.shown ~= false and widget.children then
+                        window = widget
+                    end
+                end
+                if not window or not ns.Core.greeter.prompt:IsShown() then
+                    return nil
+                end
+                local result = { buttons = {} }
+                for _, child in ipairs(window.children) do
+                    if child.kind == "Label" then
+                        result.text = child.text
+                    else
+                        result.buttons[child.text] = child
+                    end
+                end
+                return result
+            end
+            return ns, harness, online, prompt, log.options.registered.table.args.features.args.greet
+        end
+
+        it("is off by default and shows nothing", function()
+            local _, harness, online, prompt = start(false)
+            online(4, true)
+            assert.is_nil(prompt())
+            assert.are.same({}, harness.chatSent)
+        end)
+
+        it("offers a prompt when a guildmate comes online and greets only on click", function()
+            local _, harness, online, prompt = start(true)
+            online(4, true)
+            local shown = prompt()
+            assert.are.equal("Kira came online.", shown.text)
+            assert.are.same({}, harness.chatSent)
+            shown.buttons.Greet.callbacks.OnClick()
+            assert.are.equal(1, #harness.chatSent)
+            assert.are.equal("GUILD", harness.chatSent[1].channel)
+            assert.truthy(harness.chatSent[1].text:find("Kira", 1, true))
+            assert.is_nil(prompt())
+        end)
+
+        it("greets the person by their display name", function()
+            local _, harness, online, prompt = start(true)
+            online(3, true)
+            assert.are.equal("Zel came online.", prompt().text)
+            prompt().buttons.Greet.callbacks.OnClick()
+            assert.truthy(harness.chatSent[1].text:find("Zel", 1, true))
+        end)
+
+        it("doesn't prompt for an alt switch, a quick relog, or the player's own alts", function()
+            local _, _, online, prompt = start(true)
+            online(2, true)
+            prompt().buttons.Dismiss.callbacks.OnClick()
+            online(2, false)
+            online(3, true)
+            assert.is_nil(prompt())
+            online(3, false)
+            online(3, true)
+            assert.is_nil(prompt())
+            online(5, true)
+            assert.is_nil(prompt())
+        end)
+
+        it("doesn't prompt for anyone already online at login", function()
+            local _, _, online, prompt = start(true, { 2, 4 })
+            assert.is_nil(prompt())
+            online(4, true)
+            assert.is_nil(prompt())
+        end)
+
+        it("sends nothing when dismissed or closed", function()
+            local ns, harness, online, prompt = start(true)
+            online(4, true)
+            prompt().buttons.Dismiss.callbacks.OnClick()
+            assert.is_nil(prompt())
+            online(2, true)
+            ns.Core.greeter.prompt.frame.callbacks.OnClose(ns.Core.greeter.prompt.frame)
+            assert.is_nil(prompt())
+            assert.are.same({}, harness.chatSent)
+        end)
+
+        it("clears the prompt and starts a new baseline when turned off and on", function()
+            local _, harness, online, prompt, toggle = start(true)
+            online(4, true)
+            toggle.set(nil, false)
+            assert.is_false(toggle.get())
+            assert.is_nil(prompt())
+            online(2, true)
+            assert.is_nil(prompt())
+            toggle.set(nil, true)
+            online(4, false)
+            assert.is_nil(prompt())
+            assert.are.same({}, harness.chatSent)
+            harness:advance(1800)
+            online(4, true)
+            assert.are.equal("Kira came online.", prompt().text)
+        end)
+
+        it("asks for the roster when the game announces someone came online", function()
+            local ns, harness = start(true)
+            harness:advance(30)
+            local before = harness.rosterRequests
+            ns.Core:OnSystemMessage("CHAT_MSG_SYSTEM", "|Hplayer:Kira|h[Kira]|h has come online.")
+            assert.are.equal(before + 1, harness.rosterRequests)
+            ns.Core:OnSystemMessage("CHAT_MSG_SYSTEM", "You are now AFK.")
+            assert.are.equal(before + 1, harness.rosterRequests)
+        end)
+    end)
 end)

@@ -166,3 +166,29 @@ function Compat.SetPublicNote(member, text)
     end
     return false
 end
+
+-- A Lua pattern matching the client's localized format string `format` (such
+-- as ERR_FRIEND_ONLINE_SS), with each %s captured. Nil without a format.
+function Compat.PatternFromFormat(format)
+    if type(format) ~= "string" or format == "" then
+        return nil
+    end
+    local pattern = format:gsub("%%%d?%$?s", "\0"):gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%0")
+    return "^" .. pattern:gsub("%z", "(.-)") .. "$"
+end
+
+-- The name in a "has come online" system message, or nil.
+function Compat.OnlineMessageName(message)
+    local pattern = Compat.PatternFromFormat(ERR_FRIEND_ONLINE_SS)
+    if not pattern or type(message) ~= "string" then
+        return nil
+    end
+    local link, name = message:match(pattern)
+    return name or link
+end
+
+-- Posts `text` in guild chat. The game only allows this in response to a
+-- player action, so call it from a click handler.
+function Compat.SendGuildMessage(text)
+    SendChatMessage(text, "GUILD")
+end

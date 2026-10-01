@@ -137,3 +137,45 @@ describe("UI.Window", function()
         end)
     end)
 end)
+
+describe("UI.Prompt", function()
+    local function newPrompt(onClose)
+        local UI, gui = loadUI()
+        return UI.Prompt({ title = "Hello", width = 200, height = 100, onClose = onClose }), gui
+    end
+
+    it("shows text and buttons, and replaces them on the next Show", function()
+        local prompt, gui = newPrompt()
+        local clicked
+        prompt:Show("Kira came online.", { { text = "Greet", onClick = function() clicked = "greet" end } })
+        local window = gui.created[1]
+        assert.are.equal("Window", window.kind)
+        assert.are.equal("Hello", window.title)
+        assert.are.equal("Kira came online.", window.children[1].text)
+        window.children[2].callbacks.OnClick()
+        assert.are.equal("greet", clicked)
+        prompt:Show("Zel and Kira came online.", {})
+        assert.are.equal(1, #window.children)
+        assert.are.equal("Zel and Kira came online.", window.children[1].text)
+        assert.is_true(prompt:IsShown())
+    end)
+
+    it("runs onClose when the player closes it, but not when hidden by code", function()
+        local closed = 0
+        local prompt, gui = newPrompt(function() closed = closed + 1 end)
+        prompt:Show("x", {})
+        prompt:Hide()
+        assert.are.equal(0, closed)
+        assert.is_false(prompt:IsShown())
+        prompt:Show("y", {})
+        local window
+        for _, widget in ipairs(gui.created) do
+            if widget.kind == "Window" then
+                window = widget
+            end
+        end
+        window.callbacks.OnClose(window)
+        assert.are.equal(1, closed)
+        assert.is_false(prompt:IsShown())
+    end)
+end)

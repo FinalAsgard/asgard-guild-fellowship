@@ -32,6 +32,7 @@ function Harness.new(options)
         timers = {},
         rosterRequests = 0,
         notesWritten = {},
+        chatSent = {},
         chatFilters = {},
         unitTooltipPostCalls = {},
     }, Harness)
@@ -89,6 +90,10 @@ function Harness.new(options)
                 return rank and { [12] = rank.canEditOfficerNote == true }
             end,
         },
+        ERR_FRIEND_ONLINE_SS = "|Hplayer:%s|h[%s]|h has come online.",
+        SendChatMessage = function(text, channel)
+            table.insert(self.chatSent, { text = text, channel = channel })
+        end,
         CanEditPublicNote = function()
             return options.canEditPublicNote == true
         end,

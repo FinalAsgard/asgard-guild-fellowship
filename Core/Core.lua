@@ -15,6 +15,7 @@ local DB_DEFAULTS = {
         minimap = {},
         chatTag = addon.ChatTag.DEFAULTS,
         sync = { enabled = true },
+        greet = { enabled = false },
     },
 }
 local LAUNCHER_ICON = "Interface\\Icons\\Achievement_GuildPerk_EverybodysFriend"
@@ -48,6 +49,7 @@ function Core:OnInitialize()
             if wasOfficer ~= addon.guildSettings:IsAddonOfficer(playerKey) then
                 self.mainPanel:Refresh()
             end
+            self.greeter:OnSnapshot(snapshot)
             -- Sync starts once there is a roster to compare against.
             self.sync:Start()
         end
@@ -73,6 +75,23 @@ function Core:OnInitialize()
         SaveProfile = function(fields)
             return self:SaveProfile(fields)
         end,
+        GreetToggled = function()
+            self.greeter:Reset()
+        end,
+    })
+    self.greeter = addon.Greeter.New({
+        identity = function()
+            return addon.identity
+        end,
+        playerKey = function()
+            return self:PlayerKey()
+        end,
+        settings = function()
+            return self.db.profile.greet
+        end,
+        send = addon.Compat.SendGuildMessage,
+        random = math.random,
+        now = GetTime,
     })
     for _, command in ipairs(addon.Commands.ALWAYS) do
         self:RegisterChatCommand(command, "HandleCommand")
@@ -91,6 +110,7 @@ function Core:OnEnable()
     end)
     addon.Tooltip.Register()
     self:RegisterEvent("PLAYER_GUILD_UPDATE", "UpdateGuild")
+    self:RegisterEvent("CHAT_MSG_SYSTEM", "OnSystemMessage")
     self:UpdateGuild()
 end
 
@@ -335,7 +355,16 @@ function Core:UpdateGuild()
         addon.profiles = nil
         self:UnregisterEvent("GUILD_ROSTER_UPDATE")
     end
+    self.greeter:Reset()
     self:RefreshMainPanel()
+end
+
+-- A "has come online" message means the roster has news; ask for it so Guild
+-- Greet notices the arrival within seconds rather than at the next update.
+function Core:OnSystemMessage(_, message)
+    if addon.identity and self.db.profile.greet.enabled and addon.Compat.OnlineMessageName(message) then
+        self.roster:Request()
+    end
 end
 
 function Core:RefreshMainPanel()
