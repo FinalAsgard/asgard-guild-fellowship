@@ -192,3 +192,11 @@ end
 function Compat.SendGuildMessage(text)
     SendChatMessage(text, "GUILD")
 end
+
+-- Plays the client's short whisper chime, used to draw attention to a prompt.
+-- Does nothing where the sound kit isn't available.
+function Compat.PlayAlertSound()
+    if PlaySound and SOUNDKIT and SOUNDKIT.TELL_MESSAGE then
+        PlaySound(SOUNDKIT.TELL_MESSAGE)
+    end
+end

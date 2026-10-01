@@ -96,6 +96,7 @@ function Core:OnInitialize()
         now = GetTime,
         after = C_Timer.After,
         inCombat = InCombatLockdown,
+        playSound = addon.Compat.PlayAlertSound,
         announce = function(personIds)
             if self.sync then
                 self.sync:Announce("greet", { persons = personIds })

@@ -25,6 +25,7 @@ Greeter.CLAIM_WINDOW = 300
 --   inCombat()   whether the player is in combat
 --   announce(personIds)  tells other add-on users who this player greeted
 --                        (a no-op when sync is off)
+--   playSound()  plays the short alert sound
 function Greeter.New(deps)
     local greeter = setmetatable({
         deps = deps,
@@ -153,6 +154,10 @@ end
 function Greeter:ShowPrompt(keepTimeout)
     if #self.pending == 0 or self.deps.inCombat() then
         return
+    end
+    -- A short sound when the prompt opens, not on every update while it's open.
+    if not self.prompt:IsShown() then
+        self.deps.playSound()
     end
     self.prompt:Show(("%s came online."):format(addon.GreetComposer.JoinNames(names(self.pending))), {
         { text = "Greet", onClick = function() self:Greet() end },

@@ -34,6 +34,7 @@ function Harness.new(options)
         rosterRequests = 0,
         notesWritten = {},
         chatSent = {},
+        soundsPlayed = {},
         chatFilters = {},
         unitTooltipPostCalls = {},
     }, Harness)
@@ -92,6 +93,10 @@ function Harness.new(options)
             end,
         },
         ERR_FRIEND_ONLINE_SS = "|Hplayer:%s|h[%s]|h has come online.",
+        SOUNDKIT = { TELL_MESSAGE = 3081 },
+        PlaySound = function(kit)
+            table.insert(self.soundsPlayed, kit)
+        end,
         InCombatLockdown = function()
             return options.inCombat == true
         end,

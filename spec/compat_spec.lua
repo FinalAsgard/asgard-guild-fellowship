@@ -248,5 +248,16 @@ describe("Compat", function()
             Compat.SendGuildMessage("Hi!")
             assert.are.same({ "Hi!", "GUILD" }, sent)
         end)
+
+        it("plays the alert sound only where the client has it", function()
+            local played
+            local Compat = loadCompat({ globals = { SOUNDKIT = { TELL_MESSAGE = 3081 },
+                PlaySound = function(kit) played = kit end } })
+            Compat.PlayAlertSound()
+            assert.are.equal(3081, played)
+            assert.has_no.errors(function()
+                loadCompat({ globals = { SOUNDKIT = false, PlaySound = false } }).PlayAlertSound()
+            end)
+        end)
     end)
 end)
