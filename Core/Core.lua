@@ -29,6 +29,15 @@ function Core:OnInitialize()
             self:RenderMainPanel(window)
         end,
     })
+    self.noteHelperState = { mode = "link" }
+    self.noteHelper = addon.UI.Window({
+        title = "Note Helper",
+        width = 480,
+        height = 420,
+        render = function(window)
+            self:RenderNoteHelper(window)
+        end,
+    })
     self.roster = addon.RosterAdapter.New(function(snapshot)
         if addon.identity then
             addon.identity:Update(snapshot)
@@ -92,10 +101,14 @@ function Core:HandleCommand(input)
         clear = function(rest)
             self:ClearProfile(rest)
         end,
+        notes = function()
+            self:OpenNoteHelper()
+        end,
         usage = function()
             self:Print("/fellowship opens the main panel. /fellowship version prints the version.")
             self:Print("/fellowship who <name> looks up a guildmate by character name, first name, or alias.")
             self:Print("/fellowship clear <bio|alias> <name> (addon officers) clears someone's bio or alias.")
+            self:Print("/fellowship notes opens the Note Helper for linking alts and setting aliases.")
         end,
     })
 end
@@ -119,6 +132,107 @@ function Core:Who(query)
     for _, line in ipairs(lines) do
         self:Print(line)
     end
+end
+
+-- Note Helper state that fixes an issue: the first affected character is the
+-- alt; for a chain, the terminal main (listed last) is the main.
+function Core.NoteHelperPrefill(issueType, characters)
+    local state = { mode = "link", alt = characters[1] }
+    if issueType == "chain" then
+        state.main = characters[#characters]
+    end
+    return state
+end
+
+-- Opens the Note Helper, optionally with `state` ({ mode, alt, main, alias }).
+function Core:OpenNoteHelper(state)
+    if state then
+        self.noteHelperState = state
+    end
+    self.noteHelper:Show()
+    self.noteHelper:Refresh()
+end
+
+-- Whose public note this player may edit: their own, or anyone's when their
+-- rank can edit public notes.
+function Core:CanEditNote(charKey)
+    return charKey == self:PlayerKey() or addon.Compat.CanEditPublicNote()
+end
+
+function Core:NoteHelperPlan()
+    return addon.NoteHelper.Plan(self.noteHelperState, addon.identity.snapshot, function(charKey)
+        return self:CanEditNote(charKey)
+    end)
+end
+
+function Core:RenderNoteHelper(window)
+    local store = addon.identity
+    if not store or not store.snapshot then
+        window:AddText("The Note Helper works once you're in a guild and the roster has loaded.")
+        return
+    end
+    local state = self.noteHelperState
+    local function update(field)
+        return function(value)
+            state[field] = value
+            window:Refresh()
+        end
+    end
+    local choices = addon.NoteHelper.Choices(store.snapshot, function(charKey)
+        return self:CanEditNote(charKey)
+    end)
+    local function options(list)
+        local result = {}
+        for _, choice in ipairs(list) do
+            table.insert(result, { value = choice.key, text = choice.name })
+        end
+        return result
+    end
+    window:AddDropdown("What to do", {
+        { value = "link", text = "Link an alt to its main" },
+        { value = "alias", text = "Set a main's alias" },
+    }, state.mode, update("mode"))
+    if state.mode == "alias" then
+        window:AddDropdown("Main", options(choices.editable), state.main, update("main"))
+        window:AddInput("Alias (one word; leave empty to remove)", state.alias, update("alias"))
+    else
+        window:AddDropdown("Alt", options(choices.editable), state.alt, update("alt"))
+        window:AddDropdown("Main", options(choices.all), state.main, update("main"))
+    end
+    local plan = self:NoteHelperPlan()
+    local muted = { 0.7, 0.7, 0.7 }
+    if plan.member then
+        window:AddText(("Current note: %s"):format(plan.current ~= "" and plan.current or "(empty)"), muted)
+    end
+    if plan.text then
+        window:AddText(("New note: %s"):format(plan.text ~= "" and plan.text or "(empty)"))
+        if plan.fits then
+            window:AddText(("Fits: %d of %d characters."):format(#plan.text, plan.limit), { 0.25, 1, 0.25 })
+        else
+            window:AddText(("Too long by %d characters."):format(plan.overflowBy), { 1, 0.3, 0.3 })
+        end
+    end
+    if plan.reason then
+        window:AddText(plan.reason, muted)
+    end
+    window:AddButton("Write note", function()
+        self:WriteNote()
+    end, not plan.canWrite)
+end
+
+-- Writes the planned note through the game, then asks for fresh roster data so
+-- identity updates right away.
+function Core:WriteNote()
+    local plan = self:NoteHelperPlan()
+    if not plan.canWrite then
+        return
+    end
+    if not addon.Compat.SetPublicNote(plan.member, plan.text) then
+        self:Print("This client didn't let the add-on write the note.")
+        return
+    end
+    self:Print(("Updated %s's note: %s"):format(plan.member.name, plan.text ~= "" and plan.text or "(empty)"))
+    self.roster:Request(true)
 end
 
 -- /gf clear words -> profile fields.
@@ -219,12 +333,16 @@ end
 
 function Core:RefreshMainPanel()
     self.mainPanel:Refresh()
+    self.noteHelper:Refresh()
 end
 
--- The main panel. Addon officers get the Identity Issues view; everyone else
--- gets a short note until member features land here.
+-- The main panel: the Note Helper for everyone, plus the Identity Issues view
+-- for addon officers.
 function Core:RenderMainPanel(window)
     local store = addon.identity
+    window:AddButton("Open Note Helper", function()
+        self:OpenNoteHelper()
+    end, store == nil)
     if not store or not addon.guildSettings:IsAddonOfficer(self:PlayerKey()) then
         window:AddText("Officer tools appear here for your guild's addon officers.")
         return
@@ -245,8 +363,9 @@ function Core:RenderMainPanel(window)
         for _, item in ipairs(group.items) do
             window:AddText(item.ref and ("%s: %s"):format(item.names, item.ref) or item.names)
             window:AddText(item.fix, muted)
-            -- The Note Helper arrives with #14; until then this is a placeholder.
-            window:AddButton("Open Note Helper", function() end, true)
+            window:AddButton("Fix in Note Helper", function()
+                self:OpenNoteHelper(Core.NoteHelperPrefill(group.type, item.characters))
+            end)
         end
     end
 end

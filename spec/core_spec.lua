@@ -76,7 +76,7 @@ describe("Core", function()
         it("prints usage for an unknown command", function()
             local ns, log = boot()
             ns.Core:HandleCommand("dance")
-            assert.are.equal(3, #log.addon.printed)
+            assert.are.equal(4, #log.addon.printed)
             assert.is_false(ns.Core.mainPanel:IsShown())
         end)
     end)
@@ -748,24 +748,26 @@ describe("Core", function()
         it("lists issues grouped by type for an addon officer", function()
             local _, texts = open("Leader", MESSY)
             local lines, scroll = texts()
-            assert.are.equal("Heading:Identity Issues (2)", lines[1])
-            assert.are.equal("Heading:Ambiguous links (1)", lines[2])
-            assert.are.equal("Label:Malgen: >Dresden", lines[4])
-            assert.are.equal("Button:Open Note Helper", lines[6])
-            assert.is_true(scroll.children[6].disabled)
-            assert.are.equal("Heading:Unresolved links (1)", lines[7])
-            assert.are.equal("Label:Kira: >Nobody", lines[9])
+            assert.are.equal("Button:Open Note Helper", lines[1])
+            assert.are.equal("Heading:Identity Issues (2)", lines[2])
+            assert.are.equal("Heading:Ambiguous links (1)", lines[3])
+            assert.are.equal("Label:Malgen: >Dresden", lines[5])
+            assert.are.equal("Button:Fix in Note Helper", lines[7])
+            assert.is_false(scroll.children[7].disabled)
+            assert.are.equal("Heading:Unresolved links (1)", lines[8])
+            assert.are.equal("Label:Kira: >Nobody", lines[10])
         end)
 
         it("shows an empty state when the notes are clean", function()
             local _, texts = open("Leader", CLEAN)
-            assert.are.same({ "Heading:Identity Issues (0)",
+            assert.are.same({ "Button:Open Note Helper", "Heading:Identity Issues (0)",
                 "Label:No problems with your guild's notes. Every link resolves cleanly." }, texts())
         end)
 
         it("hides the view from members", function()
             local _, texts = open("Kira", MESSY)
-            assert.are.same({ "Label:Officer tools appear here for your guild's addon officers." }, texts())
+            assert.are.same({ "Button:Open Note Helper",
+                "Label:Officer tools appear here for your guild's addon officers." }, texts())
         end)
 
         it("updates live when identity changes", function()
@@ -773,7 +775,121 @@ describe("Core", function()
             harness.options.roster = CLEAN
             ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", false)
             harness:advance(1)
-            assert.are.equal("Heading:Identity Issues (0)", texts()[1])
+            assert.are.equal("Heading:Identity Issues (0)", texts()[2])
+        end)
+    end)
+
+    describe("Note Helper", function()
+        local RANKS = { { name = "Guild Master", canEditOfficerNote = true }, { name = "Member" } }
+
+        local function roster()
+            return {
+                { name = "Leader", guid = "G-L", note = "", rankIndex = 0 },
+                { name = "Dresden Zelwindran", guid = "G-D", note = "", rankIndex = 1 },
+                { name = "Dresden Other", guid = "G-O", note = "", rankIndex = 1 },
+                { name = "Malgen", guid = "G-M", note = "tank >Dresden", rankIndex = 1 },
+            }
+        end
+
+        local function start(player, canEditPublicNote)
+            local ns, log, harness = boot({
+                client = "Forever", guild = { name = "Asgard" }, roster = roster(), ranks = RANKS,
+                units = { player = { name = player, player = true } }, canEditPublicNote = canEditPublicNote,
+            })
+            ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", false)
+            harness:advance(1)
+            return ns, log, harness
+        end
+
+        -- The Note Helper window's content (the last scroll frame created).
+        local function helper(log)
+            local scroll
+            for _, widget in ipairs(log.AceGUI.created) do
+                if widget.kind == "ScrollFrame" then
+                    scroll = widget
+                end
+            end
+            local byLabel = {}
+            for _, child in ipairs(scroll.children) do
+                byLabel[child.label or child.text] = child
+            end
+            return scroll, byLabel
+        end
+
+        local function lineStarting(scroll, prefix)
+            for _, child in ipairs(scroll.children) do
+                if child.text and child.text:sub(1, #prefix) == prefix then
+                    return child.text
+                end
+            end
+        end
+
+        it("opens prefilled from an issue and writes the fixed note", function()
+            local ns, log, harness = start("Leader", true)
+            ns.Core:HandleCommand("")
+            local panel = helper(log)
+            for _, child in ipairs(panel.children) do
+                if child.text == "Fix in Note Helper" then
+                    child.callbacks.OnClick()
+                    break
+                end
+            end
+            local scroll, widgets = helper(log)
+            assert.are.equal("Malgen-Forever", widgets.Alt.value)
+            assert.are.equal("Current note: tank >Dresden", lineStarting(scroll, "Current note"))
+            widgets.Main.callbacks.OnValueChanged(nil, nil, "Dresden Zelwindran-Forever")
+            scroll, widgets = helper(log)
+            assert.are.equal("New note: tank >Dresden Zelwindran", lineStarting(scroll, "New note"))
+            assert.are.equal("Fits: 24 of 31 characters.", lineStarting(scroll, "Fits"))
+            assert.is_false(widgets["Write note"].disabled)
+
+            local requests = harness.rosterRequests
+            widgets["Write note"].callbacks.OnClick()
+            assert.are.same({ { guid = "G-M", text = "tank >Dresden Zelwindran", isPublic = true } },
+                harness.notesWritten)
+            assert.are.equal(requests + 1, harness.rosterRequests)
+            ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", false)
+            harness:advance(1)
+            assert.are.equal("G-D", ns.identity:GetPerson("Malgen-Forever").id)
+            assert.are.same({}, ns.identity:GetIssues())
+        end)
+
+        it("sets a main's alias", function()
+            local ns, log, harness = start("Leader", true)
+            ns.Core:OpenNoteHelper({ mode = "alias", main = "Dresden Zelwindran-Forever" })
+            local _, widgets = helper(log)
+            widgets["Alias (one word; leave empty to remove)"].callbacks.OnEnterPressed(nil, nil, "Zel")
+            _, widgets = helper(log)
+            widgets["Write note"].callbacks.OnClick()
+            assert.are.equal("@Zel", harness.notesWritten[1].text)
+        end)
+
+        it("only offers the player's own note without public-note permission", function()
+            local ns, log, harness = start("Malgen", false)
+            ns.Core:HandleCommand("notes")
+            local _, widgets = helper(log)
+            assert.are.same({ "Malgen-Forever" }, widgets.Alt.order)
+            assert.are.equal(4, #widgets.Main.order)
+            ns.Core:OpenNoteHelper({ mode = "alias", main = "Dresden Zelwindran-Forever", alias = "Zel" })
+            local scroll
+            scroll, widgets = helper(log)
+            assert.is_true(widgets["Write note"].disabled)
+            assert.truthy(lineStarting(scroll, "You can't edit"))
+            ns.Core:WriteNote()
+            assert.are.same({}, harness.notesWritten)
+        end)
+
+        it("refuses to write a note that won't fit", function()
+            local ns, log, harness = start("Leader", true)
+            harness.options.roster[4].note = string.rep("x", 26) .. " >Dresden"
+            ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", false)
+            harness:advance(1)
+            ns.Core:OpenNoteHelper({ mode = "link", alt = "Malgen-Forever", main = "Dresden Zelwindran-Forever" })
+            local scroll, widgets = helper(log)
+            assert.are.equal("Too long by 15 characters.", lineStarting(scroll, "Too long"))
+            assert.is_true(widgets["Write note"].disabled)
+            ns.Core:WriteNote()
+            assert.are.same({}, harness.notesWritten)
         end)
     end)
 end)

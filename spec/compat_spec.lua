@@ -193,5 +193,32 @@ describe("Compat", function()
             scripts.OnTooltipSetUnit(tooltip)
             assert.are.equal("target", seen)
         end)
+
+        it("writes a public note by GUID where the client supports it", function()
+            local written
+            local Compat = loadCompat({ globals = { C_GuildInfo = { SetNote = function(guid, text, isPublic)
+                written = { guid, text, isPublic }
+            end } } })
+            assert.is_true(Compat.SetPublicNote({ key = "A-Realm", guid = "G-A" }, ">B"))
+            assert.are.same({ "G-A", ">B", true }, written)
+        end)
+
+        it("falls back to the roster index to write a public note", function()
+            local written
+            local Compat = loadCompat({ realm = "Realm", globals = {
+                C_GuildInfo = {},
+                GetNumGuildMembers = function() return 2 end,
+                GetGuildRosterInfo = function(index) return ({ "Other-Realm", "A-Realm" })[index] end,
+                GuildRosterSetPublicNote = function(index, text) written = { index, text } end,
+            } })
+            assert.is_true(Compat.SetPublicNote({ key = "A-Realm" }, ">B"))
+            assert.are.same({ 2, ">B" }, written)
+        end)
+
+        it("reports when it can't write a note or check permission", function()
+            local Compat = loadCompat({ globals = { C_GuildInfo = {}, CanEditPublicNote = false } })
+            assert.is_false(Compat.SetPublicNote({ key = "A-Realm" }, ">B"))
+            assert.is_false(Compat.CanEditPublicNote())
+        end)
     end)
 end)

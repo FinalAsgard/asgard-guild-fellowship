@@ -141,3 +141,28 @@ function Compat.GuildRanks()
     end
     return ranks
 end
+
+-- Whether this player's rank may edit other members' public notes.
+function Compat.CanEditPublicNote()
+    return type(CanEditPublicNote) == "function" and CanEditPublicNote() == true
+end
+
+-- Writes `member`'s public note (`member` is a roster snapshot entry). Uses the
+-- GUID-based API where the client has it, else finds the roster index. Returns
+-- false when the note couldn't be written.
+function Compat.SetPublicNote(member, text)
+    if C_GuildInfo and C_GuildInfo.SetNote and member.guid then
+        C_GuildInfo.SetNote(member.guid, text, true)
+        return true
+    end
+    if GuildRosterSetPublicNote then
+        for index = 1, GetNumGuildMembers() do
+            local name = GetGuildRosterInfo(index)
+            if name and Compat.NormalizeName(name) == member.key then
+                GuildRosterSetPublicNote(index, text)
+                return true
+            end
+        end
+    end
+    return false
+end

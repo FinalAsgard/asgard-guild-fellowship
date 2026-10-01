@@ -98,3 +98,35 @@ function Window:AddButton(text, onClick, disabled)
     end)
     self.content:AddChild(button)
 end
+
+-- A labelled dropdown. `choices` is a list of { value, text } in display order;
+-- `onChange(value)` runs when the selection changes.
+function Window:AddDropdown(label, choices, selected, onChange)
+    local dropdown = aceGUI():Create("Dropdown")
+    local list, order = {}, {}
+    for _, choice in ipairs(choices) do
+        list[choice.value] = choice.text
+        table.insert(order, choice.value)
+    end
+    dropdown:SetLabel(label)
+    dropdown:SetList(list, order)
+    if selected ~= nil then
+        dropdown:SetValue(selected)
+    end
+    dropdown:SetCallback("OnValueChanged", function(_, _, value)
+        onChange(value)
+    end)
+    self.content:AddChild(dropdown)
+end
+
+-- A labelled one-line text box. `onChange(text)` runs when the player presses
+-- Enter or the Okay button.
+function Window:AddInput(label, text, onChange)
+    local input = aceGUI():Create("EditBox")
+    input:SetLabel(label)
+    input:SetText(text or "")
+    input:SetCallback("OnEnterPressed", function(_, _, value)
+        onChange(value)
+    end)
+    self.content:AddChild(input)
+end

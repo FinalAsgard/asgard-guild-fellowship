@@ -117,5 +117,23 @@ describe("UI.Window", function()
             window:Refresh()
             assert.are.equal(2, count)
         end)
+
+        it("adds dropdowns and inputs that report changes", function()
+            local picked, typed
+            local _, scroll = rendered(function(window)
+                window:AddDropdown("Pick", { { value = "a", text = "Apple" }, { value = "b", text = "Banana" } }, "b",
+                    function(value) picked = value end)
+                window:AddInput("Name", "Zel", function(text) typed = text end)
+            end)
+            local dropdown, input = scroll.children[1], scroll.children[2]
+            assert.are.same({ a = "Apple", b = "Banana" }, dropdown.list)
+            assert.are.same({ "a", "b" }, dropdown.order)
+            assert.are.equal("b", dropdown.value)
+            dropdown.callbacks.OnValueChanged(dropdown, "OnValueChanged", "a")
+            assert.are.equal("a", picked)
+            assert.are.equal("Zel", input.text)
+            input.callbacks.OnEnterPressed(input, "OnEnterPressed", "Drez")
+            assert.are.equal("Drez", typed)
+        end)
     end)
 end)

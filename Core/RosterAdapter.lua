@@ -17,10 +17,11 @@ function RosterAdapter.New(onSnapshot)
     return setmetatable({ onSnapshot = onSnapshot }, RosterAdapter)
 end
 
--- Requests fresh roster data unless one was requested recently.
-function RosterAdapter:Request()
+-- Requests fresh roster data unless one was requested recently. `force`
+-- skips the throttle, e.g. right after this player edited a note.
+function RosterAdapter:Request(force)
     local now = GetTime()
-    if self.lastRequest and now - self.lastRequest < RosterAdapter.REQUEST_INTERVAL then
+    if not force and self.lastRequest and now - self.lastRequest < RosterAdapter.REQUEST_INTERVAL then
         return
     end
     self.lastRequest = now
