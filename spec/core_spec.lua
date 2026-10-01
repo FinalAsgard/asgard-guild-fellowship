@@ -895,6 +895,19 @@ describe("Core", function()
             assert.are.same({}, harness.notesWritten)
         end)
 
+        it("keeps the helper's state through roster updates that don't change identity", function()
+            local ns, log, harness = start("Leader", true)
+            ns.Core:OpenNoteHelper({ mode = "alias", main = "Dresden Zelwindran-Forever" })
+            local _, before = helper(log)
+            harness.options.roster[2].online = true
+            harness.options.roster[2].zone = "Stormwind"
+            ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", false)
+            harness:advance(1)
+            local _, after = helper(log)
+            assert.are.equal(before["Alias (one word; leave empty to remove)"],
+                after["Alias (one word; leave empty to remove)"])
+        end)
+
         it("refuses to write a note that won't fit", function()
             local ns, log, harness = start("Leader", true)
             harness.options.roster[4].note = string.rep("x", 26) .. " >Dresden"

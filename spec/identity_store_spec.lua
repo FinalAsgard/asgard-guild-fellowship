@@ -61,15 +61,53 @@ describe("IdentityStore", function()
             guildData.resolutions)
     end)
 
-    it("fires IdentityChanged after each update", function()
-        local store = newStore()
-        local fired = 0
-        store.RegisterCallback({}, "IdentityChanged", function()
-            fired = fired + 1
+    describe("IdentityChanged", function()
+        local function counting()
+            local store = newStore()
+            local fired = { n = 0 }
+            store.RegisterCallback({}, "IdentityChanged", function()
+                fired.n = fired.n + 1
+            end)
+            return store, fired
+        end
+
+        local function with(changes)
+            local roster = {}
+            for index, member in ipairs(ROSTER) do
+                local copy = {}
+                for key, value in pairs(member) do
+                    copy[key] = value
+                end
+                for key, value in pairs(changes[index] or {}) do
+                    copy[key] = value
+                end
+                roster[index] = copy
+            end
+            return roster
+        end
+
+        it("fires on the first update and when identity changes", function()
+            local store, fired = counting()
+            store:Update(ROSTER)
+            assert.are.equal(1, fired.n)
+            store:Update(with({ [1] = { note = "@Drez" } }))
+            assert.are.equal(2, fired.n)
         end)
-        store:Update(ROSTER)
-        store:Update(ROSTER)
-        assert.are.equal(2, fired)
+
+        it("fires when a note changes even if identity stays the same", function()
+            local store, fired = counting()
+            store:Update(ROSTER)
+            store:Update(with({ [3] = { note = "loves fishing" } }))
+            assert.are.equal(2, fired.n)
+        end)
+
+        it("stays quiet for roster churn that doesn't touch identity", function()
+            local store, fired = counting()
+            store:Update(ROSTER)
+            store:Update(with({ [1] = { online = true, zone = "Stormwind", level = 61 } }))
+            store:Update(ROSTER)
+            assert.are.equal(1, fired.n)
+        end)
     end)
 
     it("reports note issues", function()

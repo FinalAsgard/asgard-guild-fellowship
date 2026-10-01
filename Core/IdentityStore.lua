@@ -1,7 +1,9 @@
 local _, addon = ...
 
 -- The rest of the add-on asks this store who a character is. It holds the
--- current guild's resolved people and fires IdentityChanged after each update.
+-- current guild's resolved people and fires IdentityChanged when an update
+-- changes them (people, names, links, issues, or note text). Roster churn such
+-- as logins, zones, and levels doesn't fire it.
 -- Register with store.RegisterCallback(owner, "IdentityChanged", handler).
 local IdentityStore = {}
 IdentityStore.__index = IdentityStore
@@ -20,6 +22,33 @@ function IdentityStore.New(guildData)
     return store
 end
 
+-- A string that changes exactly when the identity-relevant parts of a result
+-- or snapshot change, so updates that only move people around don't notify.
+local function fingerprint(result, snapshot)
+    local parts = {}
+    local ids = {}
+    for id in pairs(result.persons) do
+        table.insert(ids, id)
+    end
+    table.sort(ids)
+    for _, id in ipairs(ids) do
+        local person = result.persons[id]
+        table.insert(parts, table.concat({ id, person.mainKey, table.concat(person.characters, ","),
+            person.alias or "", person.shortName, person.displayName }, "\1"))
+    end
+    for _, issue in ipairs(result.issues) do
+        table.insert(parts, table.concat({ issue.type, table.concat(issue.characters, ","), issue.ref or "",
+            issue.fix }, "\1"))
+    end
+    local notes = {}
+    for _, member in ipairs(snapshot) do
+        table.insert(notes, member.key .. "\1" .. (member.note or ""))
+    end
+    table.sort(notes)
+    table.insert(parts, table.concat(notes, "\2"))
+    return table.concat(parts, "\3")
+end
+
 -- Re-resolves identity from a roster snapshot (see IdentityResolver). The
 -- saved resolutions let ambiguous links keep what they resolved to before.
 function IdentityStore:Update(snapshot)
@@ -33,7 +62,11 @@ function IdentityStore:Update(snapshot)
         self.members[member.key] = member
     end
     self.data.resolutions = result.resolutions
-    self.callbacks:Fire("IdentityChanged")
+    local current = fingerprint(result, snapshot)
+    if current ~= self.fingerprint then
+        self.fingerprint = current
+        self.callbacks:Fire("IdentityChanged")
+    end
 end
 
 -- Re-resolves the last snapshot, e.g. after a profile alias changed.
