@@ -16,6 +16,7 @@ Core\NoteCodec.lua
 Core\IdentityResolver.lua
 Core\SyncMerge.lua
 Core\IdentityStore.lua
+Core\GuildSettings.lua
 Core\RosterAdapter.lua
 Core\ChatTag.lua
 Core\TooltipFormatter.lua

@@ -94,8 +94,99 @@ local function chatTagGroup(getSettings)
     }
 end
 
--- `profile` returns the current AceDB profile.
-function Options.Build(profile)
+-- The guild settings group. `guild` provides:
+--   Settings()      the current guild's GuildSettings, or nil outside a guild
+--   Player()        this character's key
+--   Publish(ranks)  publishes officer ranks ({ [rankIndex] = true }) to the guild
+-- Officers edit a draft of the officer ranks and publish it; everyone else sees
+-- the ranks in force, read-only.
+local function guildSettingsGroup(guild)
+    local draft
+    local function isOfficer()
+        local settings = guild.Settings()
+        return settings ~= nil and settings:IsAddonOfficer(guild.Player())
+    end
+    local function selected()
+        if draft then
+            return draft
+        end
+        local settings = guild.Settings()
+        return settings and settings:GetOfficerRanks() or {}
+    end
+    return {
+        type = "group",
+        name = "Guild settings",
+        inline = true,
+        order = 2,
+        args = {
+            status = {
+                type = "description",
+                order = 1,
+                name = function()
+                    local settings = guild.Settings()
+                    if not settings then
+                        return "Join a guild to see its add-on settings."
+                    end
+                    local record = settings:Record()
+                    local source = record
+                        and ("Published by %s (version %d)."):format(record.publisher, record.version)
+                        or "Using the default: the guild master's rank plus ranks that can edit officer notes."
+                    if isOfficer() then
+                        return "Choose which ranks count as officers for the add-on, then publish to every member. "
+                            .. source
+                    end
+                    return "Set by your guild's add-on officers (read-only). " .. source
+                end,
+            },
+            officerRanks = {
+                type = "multiselect",
+                name = "Officer ranks",
+                order = 2,
+                hidden = function()
+                    return guild.Settings() == nil
+                end,
+                disabled = function()
+                    return not isOfficer()
+                end,
+                values = function()
+                    local values = {}
+                    for _, rank in ipairs(addon.Compat.GuildRanks()) do
+                        values[rank.index] = rank.name
+                    end
+                    return values
+                end,
+                get = function(_, index)
+                    return selected()[index] == true
+                end,
+                set = function(_, index, value)
+                    local ranks = {}
+                    for rankIndex in pairs(selected()) do
+                        ranks[rankIndex] = true
+                    end
+                    ranks[index] = value or nil
+                    draft = ranks
+                end,
+            },
+            publish = {
+                type = "execute",
+                name = "Publish to guild",
+                order = 3,
+                hidden = function()
+                    return not isOfficer()
+                end,
+                func = function()
+                    if guild.Publish(selected()) then
+                        draft = nil
+                    end
+                end,
+            },
+        },
+    }
+end
+
+-- `profile` returns the current AceDB profile; `guild` is described above
+-- guildSettingsGroup.
+function Options.Build(profile, guild)
     return {
         type = "group",
         name = Options.TITLE,
@@ -125,11 +216,12 @@ function Options.Build(profile)
                     },
                 },
             },
+            guildSettings = guildSettingsGroup(guild),
         },
     }
 end
 
-function Options.Register(profile)
-    LibStub("AceConfig-3.0"):RegisterOptionsTable(addonName, Options.Build(profile))
+function Options.Register(profile, guild)
+    LibStub("AceConfig-3.0"):RegisterOptionsTable(addonName, Options.Build(profile, guild))
     LibStub("AceConfigDialog-3.0"):AddToBlizOptions(addonName, Options.TITLE)
 end

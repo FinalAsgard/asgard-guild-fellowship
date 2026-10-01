@@ -17,6 +17,8 @@ read_globals = {
     "GetNormalizedRealmName",
     "GetNumGuildMembers",
     "GetTime",
+    "GuildControlGetNumRanks",
+    "GuildControlGetRankName",
     "GuildRoster",
     "hooksecurefunc",
     "IsInGuild",

@@ -476,4 +476,88 @@ describe("Core", function()
             assert.are.equal("G-M", c.ns.identity:GetPerson("Malgen-Forever").id)
         end)
     end)
+
+    describe("guild settings", function()
+        local RANKS = {
+            { name = "Guild Master", canEditOfficerNote = true },
+            { name = "Officer", canEditOfficerNote = true },
+            { name = "Member", canEditOfficerNote = false },
+        }
+        local ROSTER = {
+            { name = "Leader", guid = "G-L", note = "", rankIndex = 0 },
+            { name = "Officer", guid = "G-O", note = "", rankIndex = 1 },
+            { name = "Member", guid = "G-M", note = "", rankIndex = 2 },
+        }
+
+        local function client(name)
+            local ns, log, harness = boot({
+                client = "Forever", guild = { name = "Asgard" }, roster = ROSTER, ranks = RANKS,
+                units = { player = { name = name, player = true } },
+            })
+            ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", false)
+            harness:advance(1)
+            local group = log.options.registered.table.args.guildSettings.args
+            return { name = name, ns = ns, log = log, harness = harness, options = group }
+        end
+
+        local function deliver(from, to)
+            local sent = from.log.addon.sent
+            from.log.addon.sent = {}
+            for _, message in ipairs(sent) do
+                to.ns.Core:OnCommReceived(message.prefix, message.message, message.distribution, from.name)
+            end
+        end
+
+        it("reads the guild's ranks and officer-note permission through Compat", function()
+            local c = client("Member")
+            assert.are.same({
+                { index = 0, name = "Guild Master", canEditOfficerNote = true },
+                { index = 1, name = "Officer", canEditOfficerNote = true },
+                { index = 2, name = "Member", canEditOfficerNote = false },
+            }, c.ns.Compat.GuildRanks())
+            assert.are.same({ [0] = "Guild Master", [1] = "Officer", [2] = "Member" }, c.options.officerRanks.values())
+        end)
+
+        it("lets officers edit and publish, and shows members the settings read-only", function()
+            local officer = client("Officer")
+            assert.is_false(officer.options.officerRanks.disabled())
+            assert.is_false(officer.options.publish.hidden())
+            local member = client("Member")
+            assert.is_true(member.options.officerRanks.disabled())
+            assert.is_true(member.options.publish.hidden())
+            assert.is_false(member.options.officerRanks.hidden())
+            assert.is_true(member.options.officerRanks.get(nil, 1))
+            assert.truthy(member.options.status.name():find("read-only", 1, true))
+        end)
+
+        it("publishes an officer's choice to other members, who accept it and fire GuildSettingsChanged", function()
+            local officer = client("Officer")
+            local member = client("Member")
+            local changed = 0
+            member.ns.guildSettings.RegisterCallback({}, "GuildSettingsChanged", function()
+                changed = changed + 1
+            end)
+            officer.options.officerRanks.set(nil, 2, true)
+            officer.options.officerRanks.set(nil, 1, false)
+            officer.options.publish.func()
+            assert.are.same({ [0] = true, [2] = true }, officer.ns.guildSettings:Record().officerRanks)
+            deliver(officer, member)
+            assert.are.equal(1, changed)
+            assert.is_true(member.ns.guildSettings:IsAddonOfficer("Member-Forever"))
+            assert.is_false(member.ns.guildSettings:IsAddonOfficer("Officer-Forever"))
+            assert.truthy(member.options.status.name():find("Published by Officer-Forever (version 1)", 1, true))
+        end)
+
+        it("ignores settings a non-officer tries to publish", function()
+            local member = client("Member")
+            local other = client("Officer")
+            assert.is_false(member.ns.Core:PublishGuildSettings({ [2] = true }))
+            member.ns.guildSettings.data.guildSettings = { version = 9, officerRanks = { [2] = true },
+                publisher = "Member-Forever" }
+            member.ns.Core.sync:SendRecords("guildSettings", { "guild" })
+            deliver(member, other)
+            assert.is_nil(other.ns.guildSettings:Record())
+            assert.is_false(other.ns.guildSettings:IsAddonOfficer("Member-Forever"))
+        end)
+    end)
 end)

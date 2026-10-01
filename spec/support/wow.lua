@@ -15,6 +15,7 @@ Harness.__index = Harness
 --   guild      { name = ..., realm = ... } when the player is in a guild
 --   roster     guild members: { name, guid, rankIndex, level, class, className, zone, note, online }
 --              (name as GetGuildRosterInfo reports it, with or without realm)
+--   ranks      guild ranks in order (guild master first): { name, canEditOfficerNote }
 --   units      unit tokens the client knows: { mouseover = { name = ..., realm = ..., player = true } }
 --   globals    extra globals, e.g. another add-on's SLASH_ entries or a fake LibStub
 --
@@ -69,7 +70,18 @@ function Harness.new(options)
             GuildRoster = function()
                 self.rosterRequests = self.rosterRequests + 1
             end,
+            GuildControlGetRankFlags = function(order)
+                local rank = (options.ranks or {})[order]
+                return rank and { [12] = rank.canEditOfficerNote == true }
+            end,
         },
+        GuildControlGetNumRanks = function()
+            return #(options.ranks or {})
+        end,
+        GuildControlGetRankName = function(order)
+            local rank = (options.ranks or {})[order]
+            return rank and rank.name
+        end,
         GetNumGuildMembers = function()
             return #(options.roster or {})
         end,

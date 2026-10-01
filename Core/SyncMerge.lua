@@ -48,3 +48,38 @@ function SyncMerge.Resolution(altKey, record, snapshot, cachedResolutions)
     end
     return true
 end
+
+-- A guildSettings record (see GuildSettings). Accepted only when it is newer
+-- than the receiver's and both its publisher and the peer relaying it hold an
+-- addon-officer rank in the receiver's roster, judged by the receiver's current
+-- record (or the default). A relayed record can't prove who published it, so
+-- the relaying peer must be trusted too: only officers can spread settings.
+-- `members`: key -> roster entry. `ranks`: the guild's ranks (Compat.GuildRanks).
+-- Returns true, or false and one of: malformed, not newer, not an officer,
+-- untrusted relay.
+function SyncMerge.GuildSettings(record, current, senderKey, members, ranks)
+    if type(record) ~= "table" or type(record.version) ~= "number" or type(record.publisher) ~= "string"
+        or type(record.officerRanks) ~= "table" then
+        return false, "malformed"
+    end
+    for index, enabled in pairs(record.officerRanks) do
+        if type(index) ~= "number" or enabled ~= true then
+            return false, "malformed"
+        end
+    end
+    if current and type(current.version) == "number" and record.version <= current.version then
+        return false, "not newer"
+    end
+    local officerRanks = addon.GuildSettings.OfficerRanks(current, ranks)
+    local function isOfficer(key)
+        local member = members[key]
+        return member ~= nil and member.rankIndex ~= nil and officerRanks[member.rankIndex] == true
+    end
+    if not isOfficer(record.publisher) then
+        return false, "not an officer"
+    end
+    if not isOfficer(senderKey) then
+        return false, "untrusted relay"
+    end
+    return true
+end

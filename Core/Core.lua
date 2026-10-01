@@ -31,7 +31,17 @@ function Core:OnInitialize()
     end)
     addon.Options.Register(function()
         return self.db.profile
-    end)
+    end, {
+        Settings = function()
+            return addon.guildSettings
+        end,
+        Player = function()
+            return self:PlayerKey()
+        end,
+        Publish = function(ranks)
+            return self:PublishGuildSettings(ranks)
+        end,
+    })
     for _, command in ipairs(addon.Commands.ALWAYS) do
         self:RegisterChatCommand(command, "HandleCommand")
     end
@@ -128,12 +138,15 @@ function Core:UpdateGuild()
     end
     if guildKey then
         addon.identity = addon.IdentityStore.New(addon.guildData)
+        addon.guildSettings = addon.GuildSettings.New(addon.guildData, addon.identity, addon.Compat.GuildRanks)
         self.sync = self:NewSync()
         self.sync:RegisterType("resolution", addon.identity:ResolutionSyncHandler())
+        self.sync:RegisterType("guildSettings", addon.guildSettings:SyncHandler())
         self:RegisterEvent("GUILD_ROSTER_UPDATE", "OnGuildRosterUpdate")
         self.roster:Request()
     else
         addon.identity = nil
+        addon.guildSettings = nil
         self:UnregisterEvent("GUILD_ROSTER_UPDATE")
     end
 end
@@ -142,8 +155,25 @@ function Core:OnGuildRosterUpdate(_, canRequestRosterUpdate)
     self.roster:OnRosterUpdate(canRequestRosterUpdate)
 end
 
-function Core:NewSync()
+function Core.PlayerKey()
     local name, realm = UnitName("player")
+    return addon.Compat.NormalizeName(name, realm)
+end
+
+-- Publishes new officer ranks as this character and sends them to the guild
+-- right away (when sync is on). Returns false unless this character is an
+-- addon officer.
+function Core:PublishGuildSettings(officerRanks)
+    if not addon.guildSettings or not addon.guildSettings:Publish(officerRanks, self:PlayerKey()) then
+        return false
+    end
+    if self.sync and self.db.profile.sync.enabled then
+        self.sync:SendRecords("guildSettings", { addon.GuildSettings.RECORD_ID })
+    end
+    return true
+end
+
+function Core:NewSync()
     return addon.Sync.New({
         send = function(message, priority)
             self:SendCommMessage(Core.COMM_PREFIX, message, "GUILD", nil, priority)
@@ -151,7 +181,7 @@ function Core:NewSync()
         after = C_Timer.After,
         random = math.random,
         now = GetTime,
-        player = addon.Compat.NormalizeName(name, realm),
+        player = self:PlayerKey(),
         enabled = function()
             return self.db.profile.sync.enabled
         end,

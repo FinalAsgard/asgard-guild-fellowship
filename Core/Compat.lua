@@ -121,3 +121,23 @@ function Compat.HookUnitTooltip(callback)
         end)
     end
 end
+
+-- Index of "edit officer note" in a rank's permission flags.
+Compat.RANK_FLAG_EDIT_OFFICER_NOTE = 12
+
+-- The guild's ranks as { index (0-based, 0 = guild master), name, canEditOfficerNote }.
+-- canEditOfficerNote is false where the client won't report rank permissions.
+function Compat.GuildRanks()
+    local ranks = {}
+    local count = GuildControlGetNumRanks and GuildControlGetNumRanks() or 0
+    local getFlags = C_GuildInfo and C_GuildInfo.GuildControlGetRankFlags
+    for order = 1, count do
+        local flags = getFlags and getFlags(order)
+        table.insert(ranks, {
+            index = order - 1,
+            name = GuildControlGetRankName(order),
+            canEditOfficerNote = type(flags) == "table" and flags[Compat.RANK_FLAG_EDIT_OFFICER_NOTE] == true,
+        })
+    end
+    return ranks
+end
