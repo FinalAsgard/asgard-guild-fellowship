@@ -114,8 +114,9 @@ end)
 
 describe("SyncMerge.GuildSettings", function()
     local ns = load()
-    local function check(record, current, sender)
-        return { ns.SyncMerge.GuildSettings(record, current, sender, membersByKey(), RANKS) }
+    -- The third argument is who relayed the record; it never affects the decision.
+    local function check(record, current)
+        return { ns.SyncMerge.GuildSettings(record, current, membersByKey(), RANKS) }
     end
     local function record(version, publisher, ranks)
         return { version = version, publisher = publisher, officerRanks = ranks or { [0] = true } }
@@ -132,8 +133,8 @@ describe("SyncMerge.GuildSettings", function()
         assert.are.same({ false, "not an officer" }, check(record(1, "Stranger-Forever"), nil, "Officer-Forever"))
     end)
 
-    it("rejects a record relayed by a non-officer, even if it claims an officer published it", function()
-        assert.are.same({ false, "untrusted relay" }, check(record(1, "Leader-Forever"), nil, "Member-Forever"))
+    it("accepts an officer's record relayed by any guildmate", function()
+        assert.are.same({ true }, check(record(1, "Leader-Forever"), nil, "Member-Forever"))
     end)
 
     it("rejects records that aren't newer", function()

@@ -27,18 +27,16 @@ function Profiles.Clean(value)
     return value
 end
 
--- `store`: IdentityStore (who a character is). `isTrustedRelay(charKey)`:
--- whether a character may pass on other people's profiles (addon officers).
--- `now()`: the server time in seconds, so a saved version beats any older one
--- even after a reinstall wiped the local copy.
+-- `store`: IdentityStore (who a character is). `now()`: the server time in
+-- seconds, so a saved version beats any older one even after a reinstall wiped
+-- the local copy.
 -- Fires ProfileChanged(personId); register with
 -- profiles.RegisterCallback(owner, "ProfileChanged", handler).
-function Profiles.New(guildData, store, isTrustedRelay, now)
+function Profiles.New(guildData, store, now)
     guildData.profiles = guildData.profiles or {}
     local profiles = setmetatable({
         data = guildData,
         store = store,
-        isTrustedRelay = isTrustedRelay,
         now = now,
     }, Profiles)
     profiles.callbacks = LibStub("CallbackHandler-1.0"):New(profiles)
@@ -98,9 +96,8 @@ function Profiles:SyncHandler()
         Get = function(personId)
             return self.data.profiles[personId]
         end,
-        Receive = function(personId, record, sender)
-            local accepted = addon.SyncMerge.Profile(personId, record, self.data.profiles[personId], sender,
-                personOf, self.isTrustedRelay)
+        Receive = function(personId, record)
+            local accepted = addon.SyncMerge.Profile(personId, record, self.data.profiles[personId], personOf)
             if not accepted then
                 return false
             end

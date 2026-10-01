@@ -50,14 +50,12 @@ function SyncMerge.Resolution(altKey, record, snapshot, cachedResolutions)
 end
 
 -- A guildSettings record (see GuildSettings). Accepted only when it is newer
--- than the receiver's and both its publisher and the peer relaying it hold an
--- addon-officer rank in the receiver's roster, judged by the receiver's current
--- record (or the default). A relayed record can't prove who published it, so
--- the relaying peer must be trusted too: only officers can spread settings.
+-- than the receiver's and its publisher holds an addon-officer rank in the
+-- receiver's roster, judged by the receiver's current record (or the default).
+-- Any peer may relay it: relayed data is trusted as accurate.
 -- `members`: key -> roster entry. `ranks`: the guild's ranks (Compat.GuildRanks).
--- Returns true, or false and one of: malformed, not newer, not an officer,
--- untrusted relay.
-function SyncMerge.GuildSettings(record, current, senderKey, members, ranks)
+-- Returns true, or false and one of: malformed, not newer, not an officer.
+function SyncMerge.GuildSettings(record, current, members, ranks)
     if type(record) ~= "table" or type(record.version) ~= "number" or type(record.publisher) ~= "string"
         or type(record.officerRanks) ~= "table" then
         return false, "malformed"
@@ -78,22 +76,17 @@ function SyncMerge.GuildSettings(record, current, senderKey, members, ranks)
     if not isOfficer(record.publisher) then
         return false, "not an officer"
     end
-    if not isOfficer(senderKey) then
-        return false, "untrusted relay"
-    end
     return true
 end
 
 -- A profile record for person `personId` (see Profiles). Accepted only when it
 -- is newer, its fields are strings within the limits, and its author character
 -- currently resolves to that person in the receiver's view, so nobody can edit
--- someone else's profile. It must also come from that person's own character or
--- from a trusted relay (an addon officer): a relayed record can't prove who
--- wrote it, so only officers may pass on other people's profiles.
--- `personOf(charKey)` -> person id; `isTrustedRelay(charKey)` -> boolean.
--- Returns true, or false and one of: malformed, not newer, not their character,
--- untrusted relay.
-function SyncMerge.Profile(personId, record, current, senderKey, personOf, isTrustedRelay)
+-- someone else's profile. Any peer may relay it, so profiles reach guildmates
+-- while their owner is offline: relayed data is trusted as accurate.
+-- `personOf(charKey)` -> person id.
+-- Returns true, or false and one of: malformed, not newer, not their character.
+function SyncMerge.Profile(personId, record, current, personOf)
     if type(personId) ~= "string" or type(record) ~= "table" or type(record.version) ~= "number"
         or type(record.author) ~= "string" then
         return false, "malformed"
@@ -109,9 +102,6 @@ function SyncMerge.Profile(personId, record, current, senderKey, personOf, isTru
     end
     if personOf(record.author) ~= personId then
         return false, "not their character"
-    end
-    if personOf(senderKey) ~= personId and not isTrustedRelay(senderKey) then
-        return false, "untrusted relay"
     end
     return true
 end

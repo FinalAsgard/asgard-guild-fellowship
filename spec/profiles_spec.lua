@@ -23,9 +23,7 @@ local function setup(roster, guildData)
     local ns = load()
     local store = ns.IdentityStore.New(guildData or {})
     store:Update(roster or ROSTER)
-    local profiles = ns.Profiles.New(store.data, store, function(key)
-        return key == "Officer-Forever"
-    end, function()
+    local profiles = ns.Profiles.New(store.data, store, function()
         return 0
     end)
     return profiles, store, ns
@@ -154,8 +152,6 @@ describe("Profiles versions", function()
         store:Update(ROSTER)
         local clock = 1000
         local profiles = ns.Profiles.New(store.data, store, function()
-            return false
-        end, function()
             return clock
         end)
         profiles:Save("Kira-Forever", { bio = "a" })
@@ -177,11 +173,9 @@ describe("SyncMerge.Profile", function()
     local function personOf(key)
         return PEOPLE[key]
     end
-    local function trusted(key)
-        return key == "Officer-Forever"
-    end
-    local function check(record, sender, current)
-        return { ns.SyncMerge.Profile("G-D", record, current, sender, personOf, trusted) }
+    -- `sender` is who relayed the record; it never affects the decision.
+    local function check(record, _, current)
+        return { ns.SyncMerge.Profile("G-D", record, current, personOf) }
     end
 
     it("accepts a newer profile written and sent by the person's own characters", function()
@@ -195,11 +189,8 @@ describe("SyncMerge.Profile", function()
             check({ version = 1, author = "Kira-Forever", bio = "I am Dresden" }, "Kira-Forever"))
     end)
 
-    it("rejects a profile relayed by someone who isn't trusted", function()
-        assert.are.same({ false, "untrusted relay" }, check({ version = 1, author = "Malgen-Forever" }, "Kira-Forever"))
-    end)
-
-    it("accepts a profile relayed by an addon officer", function()
+    it("accepts a profile relayed by any guildmate", function()
+        assert.are.same({ true }, check({ version = 1, author = "Malgen-Forever" }, "Kira-Forever"))
         assert.are.same({ true }, check({ version = 1, author = "Malgen-Forever" }, "Officer-Forever"))
     end)
 
@@ -222,7 +213,6 @@ describe("SyncMerge.Profile", function()
             assert.are.same({ false, "malformed" }, check(record, "Malgen-Forever"))
         end
         assert.are.same({ false, "malformed" },
-            { ns.SyncMerge.Profile(nil, { version = 1, author = "Malgen-Forever" }, nil, "Malgen-Forever", personOf,
-                trusted) })
+            { ns.SyncMerge.Profile(nil, { version = 1, author = "Malgen-Forever" }, nil, personOf) })
     end)
 end)

@@ -90,7 +90,7 @@ function GuildSettings:SyncHandler()
         Get = function(recordId)
             return recordId == id and self:Record() or nil
         end,
-        Receive = function(recordId, record, sender)
+        Receive = function(recordId, record)
             if recordId ~= id then
                 return false
             end
@@ -98,7 +98,7 @@ function GuildSettings:SyncHandler()
             for _, member in ipairs(self.store.snapshot or {}) do
                 members[member.key] = member
             end
-            if not addon.SyncMerge.GuildSettings(record, self:Record(), sender, members, self.getRanks()) then
+            if not addon.SyncMerge.GuildSettings(record, self:Record(), members, self.getRanks()) then
                 return false
             end
             self.data.guildSettings = {
