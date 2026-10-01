@@ -19,7 +19,7 @@
 - coderabbit
 - adversarial
 
-> CodeRabbit must be installed on `jonzenor/asgard-guild-fellowship` for the `coderabbit` check to work.
+> CodeRabbit must be installed on `FinalAsgard/asgard-guild-fellowship` for the `coderabbit` check to work.
 
 ## Base Branch
 

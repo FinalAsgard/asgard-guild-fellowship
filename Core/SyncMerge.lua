@@ -1,0 +1,132 @@
+local _, addon = ...
+
+-- Decides whether to accept records received from other add-on users. Pure:
+-- decisions depend only on the record and the receiver's own roster view, so
+-- nobody can change another person's identity against the guild notes.
+local SyncMerge = {}
+addon.SyncMerge = SyncMerge
+
+-- A resolution record says "the alt `altKey` links to the character whose GUID
+-- is `record.target`, from the note ref `record.ref`". Returns true, or false
+-- and a reason:
+--   malformed     the record isn't shaped like a resolution
+--   unknown alt   the alt isn't in the receiver's roster
+--   note changed  the alt's current note has a different (or no) main ref
+--   conflict      the receiver's notes resolve the ref to someone else, unambiguously
+--   inconsistent  the target's name doesn't match the ref (a forged link)
+--   keeping local the receiver already holds a different link that still fits
+function SyncMerge.Resolution(altKey, record, snapshot, cachedResolutions)
+    if type(altKey) ~= "string" or type(record) ~= "table" or type(record.ref) ~= "string"
+        or type(record.target) ~= "string" then
+        return false, "malformed"
+    end
+    local Resolver = addon.IdentityResolver
+    local index = Resolver.Index(snapshot)
+    local alt = index.members[altKey]
+    if not alt then
+        return false, "unknown alt"
+    end
+    local ref = index.notes[altKey].mainRef
+    if not ref or ref:lower() ~= record.ref:lower() then
+        return false, "note changed"
+    end
+    local candidates = Resolver.Candidates(index, ref, alt)
+    if #candidates == 1 and candidates[1].guid ~= record.target then
+        return false, "conflict"
+    end
+    local isCandidate = {}
+    for _, candidate in ipairs(candidates) do
+        isCandidate[candidate.guid] = true
+    end
+    if not isCandidate[record.target] then
+        return false, "inconsistent"
+    end
+    local existing = (cachedResolutions or {})[altKey]
+    if existing and existing.target ~= record.target and isCandidate[existing.target]
+        and type(existing.ref) == "string" and existing.ref:lower() == ref:lower() then
+        return false, "keeping local"
+    end
+    return true
+end
+
+-- A guildSettings record (see GuildSettings). Accepted only when it is newer
+-- than the receiver's and its publisher holds an addon-officer rank in the
+-- receiver's roster, judged by the receiver's current record (or the default).
+-- Any peer may relay it: relayed data is trusted as accurate.
+-- `members`: key -> roster entry. `ranks`: the guild's ranks (Compat.GuildRanks).
+-- Returns true, or false and one of: malformed, not newer, not an officer.
+function SyncMerge.GuildSettings(record, current, members, ranks)
+    if type(record) ~= "table" or type(record.version) ~= "number" or type(record.publisher) ~= "string"
+        or type(record.officerRanks) ~= "table" then
+        return false, "malformed"
+    end
+    for index, enabled in pairs(record.officerRanks) do
+        if type(index) ~= "number" or enabled ~= true then
+            return false, "malformed"
+        end
+    end
+    if current and type(current.version) == "number" and record.version <= current.version then
+        return false, "not newer"
+    end
+    local officerRanks = addon.GuildSettings.OfficerRanks(current, ranks)
+    local function isOfficer(key)
+        local member = members[key]
+        return member ~= nil and member.rankIndex ~= nil and officerRanks[member.rankIndex] == true
+    end
+    if not isOfficer(record.publisher) then
+        return false, "not an officer"
+    end
+    return true
+end
+
+-- A profile record for person `personId` (see Profiles). Accepted only when it
+-- is newer, its fields are strings within the limits, and its author character
+-- currently resolves to that person in the receiver's view, so nobody can edit
+-- someone else's profile. Any peer may relay it, so profiles reach guildmates
+-- while their owner is offline: relayed data is trusted as accurate.
+-- An officer clear ({ version, author, clear = { fields } }) is accepted instead
+-- when it is newer, names only clearable fields, carries no content, and its
+-- author is an addon officer.
+-- `personOf(charKey)` -> person id; `isOfficer(charKey)` -> boolean.
+-- Returns true, or false and one of: malformed, not newer, not their character,
+-- clear with content, not an officer.
+function SyncMerge.Profile(personId, record, current, personOf, isOfficer)
+    if type(personId) ~= "string" or type(record) ~= "table" or type(record.version) ~= "number"
+        or type(record.author) ~= "string" then
+        return false, "malformed"
+    end
+    for field, limit in pairs(addon.Profiles.LIMITS) do
+        local value = record[field]
+        if value ~= nil and (type(value) ~= "string" or #value > limit) then
+            return false, "malformed"
+        end
+    end
+    if record.clear ~= nil then
+        if type(record.clear) ~= "table" or #record.clear == 0 then
+            return false, "malformed"
+        end
+        for _, field in ipairs(record.clear) do
+            if not addon.Profiles.CLEARABLE[field] then
+                return false, "malformed"
+            end
+        end
+        for field in pairs(addon.Profiles.LIMITS) do
+            if record[field] ~= nil then
+                return false, "clear with content"
+            end
+        end
+    end
+    if current and type(current.version) == "number" and record.version <= current.version then
+        return false, "not newer"
+    end
+    if record.clear ~= nil then
+        if not isOfficer(record.author) then
+            return false, "not an officer"
+        end
+        return true
+    end
+    if personOf(record.author) ~= personId then
+        return false, "not their character"
+    end
+    return true
+end

@@ -3,6 +3,30 @@
 ## Notes: Helps guild members know, recognize, find, and play with each other.
 ## Author: FinalAsgard
 ## Version: @project-version@
+## SavedVariables: AsgardsGuildFellowshipDB
 ## X-Client: Forever
 
+Libs\embeds.xml
+
 AsgardsGuildFellowship.lua
+Core\Compat.lua
+Core\GuildData.lua
+Core\Commands.lua
+Core\NoteCodec.lua
+Core\IdentityResolver.lua
+Core\SyncMerge.lua
+Core\IdentityStore.lua
+Core\GuildSettings.lua
+Core\Profiles.lua
+Core\RosterAdapter.lua
+Core\ChatTag.lua
+Core\TooltipFormatter.lua
+Core\Tooltip.lua
+Core\WhoFormatter.lua
+Core\IssuesView.lua
+Core\NoteHelper.lua
+Core\Protocol.lua
+Core\Sync.lua
+Core\UI.lua
+Core\Options.lua
+Core\Core.lua
