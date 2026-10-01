@@ -86,7 +86,7 @@ describe("Discovery.Build", function()
         assert.are.equal("Orgrimmar", mike.zone)
         assert.are.equal(1, #mike.matching)
         assert.are.same({ key = "Tanky-Forever", name = "Tanky", level = 34, class = "WARRIOR",
-            className = "Warrior", online = false, zone = "" }, mike.matching[1])
+            className = "Warrior", online = false, zone = "", roles = {} }, mike.matching[1])
         assert.are.same({}, people[4].matching)
     end)
 
@@ -146,7 +146,66 @@ describe("Discovery.Build", function()
     end)
 end)
 
+describe("Discovery filters and roles", function()
+    local function rolesOf(ns)
+        return function(class)
+            return ns.Compat.ClassRoles(class)
+        end
+    end
+
+    it("hints each character's roles from its class", function()
+        local ns, store, availability = setup()
+        local people = ns.Discovery.Build(store, availability, ME, { rolesOf = rolesOf(ns) })
+        local kira = people[2]
+        assert.are.equal("G-Kira", kira.personId)
+        assert.are.same({ tank = false, heal = true }, kira.character.roles)
+        assert.are.same({ tank = true, heal = false }, people[3].matching[1].roles)
+    end)
+
+    it("keeps only people with the chosen status", function()
+        local ns, store, availability = setup()
+        availability:Set("Kira-Forever", "dungeons")
+        availability:Set("Zed-Forever", "pvp")
+        assert.are.same({ "Kira" }, names(ns.Discovery.Build(store, availability, ME, { status = "dungeons" })))
+        availability:Set("Bea-Forever", "busy")
+        assert.are.same({ "Bea" }, names(ns.Discovery.Build(store, availability, ME, { status = "busy" })))
+    end)
+
+    it("keeps only people in my zone", function()
+        local ns, store, availability = setup()
+        assert.are.same({ "Kira" }, names(ns.Discovery.Build(store, availability, ME, { zone = "Duskwood" })))
+    end)
+
+    it("keeps only people with a character in level range that can fill the role", function()
+        local ns, store, availability = setup()
+        local options = { rolesOf = rolesOf(ns), role = "heal" }
+        assert.are.same({ "Kira" }, names(ns.Discovery.Build(store, availability, ME, options)))
+        options.role = "tank"
+        -- Bea and Tanky (Mike's alt) are warriors at 34; Zed is a warrior out of range.
+        assert.are.same({ "Bea", "Magus" }, names(ns.Discovery.Build(store, availability, ME, options)))
+    end)
+
+    it("combines filters", function()
+        local ns, store, availability = setup()
+        availability:Set("Bea-Forever", "busy")
+        local options = { rolesOf = rolesOf(ns), role = "tank", showBusy = true, status = "busy" }
+        assert.are.same({ "Bea" }, names(ns.Discovery.Build(store, availability, ME, options)))
+        options.zone = "Duskwood"
+        assert.are.same({}, names(ns.Discovery.Build(store, availability, ME, options)))
+    end)
+end)
+
 describe("Discovery.Lines", function()
+    it("labels characters that can tank or heal", function()
+        local ns, store, availability = setup()
+        local options = { rolesOf = function(class) return ns.Compat.ClassRoles(class) end }
+        local mike = ns.Discovery.Build(store, availability, ME, options)[3]
+        assert.are.same({
+            "Magus — Magus, Mage 60 · Orgrimmar",
+            "    At your level: Tanky, Warrior 34 [Tank] (offline)",
+        }, ns.Discovery.Lines(mike))
+    end)
+
     it("describes the character they're on, their status, zone, and level matches", function()
         local ns, store, availability = setup()
         availability:Set("Magus-Forever", "dungeons")

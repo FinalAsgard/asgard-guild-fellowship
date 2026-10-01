@@ -221,3 +221,25 @@ function Compat.MaxLevel()
     end
     return MAX_PLAYER_LEVEL
 end
+
+-- Which classes can tank or heal, by class token. A hint only: specs aren't
+-- detected. Retail adds its newer classes to the classic list.
+local CLASSIC_ROLES = {
+    WARRIOR = { tank = true },
+    PALADIN = { tank = true, heal = true },
+    DRUID = { tank = true, heal = true },
+    PRIEST = { heal = true },
+    SHAMAN = { heal = true },
+}
+local RETAIL_ROLES = {
+    DEATHKNIGHT = { tank = true },
+    DEMONHUNTER = { tank = true },
+    MONK = { tank = true, heal = true },
+    EVOKER = { heal = true },
+}
+
+-- { tank = boolean, heal = boolean } for a class token.
+function Compat.ClassRoles(class)
+    local roles = CLASSIC_ROLES[class] or (not Compat.IsForever() and RETAIL_ROLES[class]) or {}
+    return { tank = roles.tank == true, heal = roles.heal == true }
+end

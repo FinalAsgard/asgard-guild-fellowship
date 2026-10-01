@@ -20,8 +20,9 @@ function Discovery.Matches(level, myLevel, range, maxLevel)
     return math.abs(level - myLevel) <= range
 end
 
-local function character(charKey, info)
+local function character(charKey, info, rolesOf)
     return {
+        roles = rolesOf(info.class),
         key = charKey,
         name = info.name or addon.Compat.NameFromKey(charKey),
         level = info.level,
@@ -30,6 +31,33 @@ local function character(charKey, info)
         online = info.online == true,
         zone = info.zone,
     }
+end
+
+local function canFill(characters, role)
+    for _, char in ipairs(characters) do
+        if char.roles[role] then
+            return true
+        end
+    end
+    return false
+end
+
+-- Whether a person with `status`, on character `current`, with `matching`
+-- characters in level range, gets past the filters in `options` (see Build).
+function Discovery.Passes(status, current, matching, options)
+    if status == "busy" and not options.showBusy and options.status ~= "busy" then
+        return false
+    end
+    if options.status and status ~= options.status then
+        return false
+    end
+    if options.zone and current.zone ~= options.zone then
+        return false
+    end
+    if options.role and not canFill(matching, options.role) then
+        return false
+    end
+    return true
 end
 
 -- Sort order by status: up for something, then no status, then Busy.
@@ -46,12 +74,24 @@ end
 --     matching = { characters in level range, online or not } }
 -- `store`: IdentityStore. `availability`: Availability (or nil: everyone "none").
 -- `me`: { personId, level } for the player's current character.
--- `options`: { range = levels, maxLevel = level cap or nil, showBusy = boolean }.
--- Only people with a character online are listed; the player is left out, and
--- people who set Busy are too unless showBusy.
+-- `options`:
+--   range      levels either side (default LEVEL_RANGE)
+--   maxLevel   the level cap, or nil
+--   rolesOf    class token -> { tank, heal } (default: no roles)
+--   showBusy   list people who set Busy
+--   status     only people with this status (nil: any)
+--   zone       only people whose current character is in this zone (nil: any)
+--   role       "tank" or "heal": only people with a character in level range
+--              that can fill it (nil: any)
+-- Each character also carries `roles`. Only people with a character online are
+-- listed; the player is left out, and people who set Busy are too unless showBusy
+-- (or the status filter asks for Busy).
 function Discovery.Build(store, availability, me, options)
     options = options or {}
     local range = options.range or Discovery.LEVEL_RANGE
+    local rolesOf = options.rolesOf or function()
+        return {}
+    end
     local people = {}
     for _, personId in ipairs(store:GetPersonIds()) do
         if personId ~= me.personId then
@@ -62,14 +102,14 @@ function Discovery.Build(store, availability, me, options)
                 local info = store:GetCharacterInfo(charKey)
                 if info then
                     if info.online and not current then
-                        current = character(charKey, info)
+                        current = character(charKey, info, rolesOf)
                     end
                     if Discovery.Matches(info.level, me.level, range, options.maxLevel) then
-                        table.insert(matching, character(charKey, info))
+                        table.insert(matching, character(charKey, info, rolesOf))
                     end
                 end
             end
-            if current and (status ~= "busy" or options.showBusy) then
+            if current and Discovery.Passes(status, current, matching, options) then
                 table.insert(people, {
                     personId = personId,
                     name = store:GetDisplayName(personId) or current.name,
@@ -98,9 +138,19 @@ function Discovery.Build(store, availability, me, options)
     return people
 end
 
--- "Mage 60" or "Warrior 34 (offline)".
+-- "Mage 60", "Warrior 34 [Tank] (offline)", "Druid 34 [Tank/Healer]".
 local function describe(char)
     local text = ("%s %s"):format(char.className or char.class or "?", tostring(char.level or "?"))
+    local roles = {}
+    if char.roles and char.roles.tank then
+        table.insert(roles, "Tank")
+    end
+    if char.roles and char.roles.heal then
+        table.insert(roles, "Healer")
+    end
+    if #roles > 0 then
+        text = ("%s [%s]"):format(text, table.concat(roles, "/"))
+    end
     if not char.online then
         text = text .. " (offline)"
     end

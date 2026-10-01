@@ -758,14 +758,19 @@ describe("Core", function()
                     scroll = widget
                 end
             end
-            local result = {}
+            -- Text only: the filter widgets come back separately, by label.
+            local result, controls = {}, {}
             for _, child in ipairs(scroll.children) do
                 if child.text == "Open Note Helper" then
                     break
                 end
-                table.insert(result, child.kind .. ":" .. tostring(child.text))
+                if child.label then
+                    controls[child.label] = child
+                else
+                    table.insert(result, child.kind .. ":" .. tostring(child.text))
+                end
             end
-            return result
+            return result, controls
         end
 
         it("lists guildmates in the main panel's Discovery section, live as statuses arrive", function()
@@ -798,6 +803,38 @@ describe("Core", function()
                 note = ">Dresden", online = false, level = 30, className = "Warrior" }, ROSTER[3] }
             friend.ns.Core[friend.log.addon.events.GUILD_ROSTER_UPDATE](friend.ns.Core, "GUILD_ROSTER_UPDATE", false)
             friend.harness:advance(1)
+            assert.are.equal("Heading:Discovery (0)", panel(friend)[1])
+        end)
+
+        it("filters Discovery from saved filters, redrawing on change", function()
+            local alt = client("Malgen Zelwindran")
+            local friend = client("Kira")
+            friend.ns.Core:HandleCommand("")
+            local _, controls = panel(friend)
+            assert.are.equal("any", controls["Up for"].value)
+            assert.are.equal("any", controls["Can fill"].value)
+            assert.is_false(controls["Same zone as me"].value)
+            assert.is_false(controls["Show Busy"].value)
+            controls["Up for"].callbacks.OnValueChanged(controls["Up for"], "OnValueChanged", "pvp")
+            friend.harness:advance(0)
+            assert.are.equal("pvp", friend.ns.Core.db.profile.discovery.status)
+            assert.are.same({ "Heading:Discovery (0)", "Label:Nobody online matches these filters right now." },
+                panel(friend))
+            alt.ns.Core:HandleCommand("status pvp")
+            deliver(alt, friend)
+            assert.are.equal("Heading:Discovery (1)", panel(friend)[1])
+            _, controls = panel(friend)
+            assert.are.equal("pvp", controls["Up for"].value)
+            controls["Same zone as me"].callbacks.OnValueChanged(controls["Same zone as me"], "OnValueChanged", true)
+            friend.harness:advance(0)
+            assert.are.equal("Heading:Discovery (0)", panel(friend)[1])
+            controls = select(2, panel(friend))
+            controls["Up for"].callbacks.OnValueChanged(controls["Up for"], "OnValueChanged", "any")
+            controls["Same zone as me"].callbacks.OnValueChanged(controls["Same zone as me"], "OnValueChanged", false)
+            controls["Can fill"].callbacks.OnValueChanged(controls["Can fill"], "OnValueChanged", "heal")
+            friend.harness:advance(0)
+            assert.is_nil(friend.ns.Core.db.profile.discovery.status)
+            assert.are.equal("heal", friend.ns.Core.db.profile.discovery.role)
             assert.are.equal("Heading:Discovery (0)", panel(friend)[1])
         end)
 

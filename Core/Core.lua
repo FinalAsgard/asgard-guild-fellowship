@@ -21,6 +21,8 @@ local DB_DEFAULTS = {
         greet = { enabled = false, welcomeNew = true, prompt = {} },
         -- share: whether guildmates see what this player is up for.
         availability = { share = true },
+        -- Discovery's filters: status and role are nil for "any".
+        discovery = { sameZone = false, showBusy = false },
     },
 }
 local LAUNCHER_ICON = "Interface\\Icons\\Achievement_GuildPerk_EverybodysFriend"
@@ -507,11 +509,21 @@ function Core:RenderDiscovery(window)
         window:AddText("Discovery shows who you could play with once you're in a guild and the roster has loaded.")
         return
     end
-    local people = addon.Discovery.Build(store, addon.availability, { personId = person.id, level = info.level },
-        { maxLevel = addon.Compat.MaxLevel() })
+    local filters = self.db.profile.discovery
+    local people = addon.Discovery.Build(store, addon.availability, { personId = person.id, level = info.level }, {
+        maxLevel = addon.Compat.MaxLevel(),
+        rolesOf = addon.Compat.ClassRoles,
+        showBusy = filters.showBusy,
+        status = filters.status,
+        zone = filters.sameZone and (info.zone or "") or nil,
+        role = filters.role,
+    })
     window:AddHeading(("Discovery (%d)"):format(#people))
+    self:RenderDiscoveryFilters(window, filters)
     if #people == 0 then
-        window:AddText("Nobody else is online who's free to play right now.")
+        local filtered = filters.status or filters.role or filters.sameZone
+        window:AddText(filtered and "Nobody online matches these filters right now."
+            or "Nobody else is online who's free to play right now.")
         return
     end
     for _, entry in ipairs(people) do
@@ -519,6 +531,37 @@ function Core:RenderDiscovery(window)
             window:AddText(line, index > 1 and { 0.7, 0.7, 0.7 } or nil)
         end
     end
+end
+
+-- Discovery's filters, saved in the profile. A change redraws the panel on the
+-- next frame, so the widget that fired isn't released inside its own callback.
+function Core:RenderDiscoveryFilters(window, filters)
+    local function changed(field, value)
+        filters[field] = value
+        C_Timer.After(0, function()
+            self.mainPanel:Refresh()
+        end)
+    end
+    local statuses = { { value = "any", text = "Any status" } }
+    for _, status in ipairs(addon.Availability.STATUSES) do
+        table.insert(statuses, { value = status, text = addon.Availability.LABELS[status] })
+    end
+    window:AddDropdown("Up for", statuses, filters.status or "any", function(value)
+        changed("status", value ~= "any" and value or nil)
+    end)
+    window:AddDropdown("Can fill", {
+        { value = "any", text = "Any role" },
+        { value = "tank", text = "Tank" },
+        { value = "heal", text = "Healer" },
+    }, filters.role or "any", function(value)
+        changed("role", value ~= "any" and value or nil)
+    end)
+    window:AddCheckBox("Same zone as me", filters.sameZone, function(value)
+        changed("sameZone", value)
+    end)
+    window:AddCheckBox("Show Busy", filters.showBusy, function(value)
+        changed("showBusy", value)
+    end)
 end
 
 function Core:OnGuildRosterUpdate(_, canRequestRosterUpdate)

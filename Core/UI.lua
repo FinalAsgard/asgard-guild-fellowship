@@ -119,6 +119,17 @@ function Window:AddDropdown(label, choices, selected, onChange)
     self.content:AddChild(dropdown)
 end
 
+-- A labelled checkbox. `onChange(checked)` runs when the player ticks or unticks it.
+function Window:AddCheckBox(label, checked, onChange)
+    local checkbox = aceGUI():Create("CheckBox")
+    checkbox:SetLabel(label)
+    checkbox:SetValue(checked == true)
+    checkbox:SetCallback("OnValueChanged", function(_, _, value)
+        onChange(value == true)
+    end)
+    self.content:AddChild(checkbox)
+end
+
 -- A labelled one-line text box. `onChange(text)` runs when the player presses
 -- Enter or the Okay button.
 function Window:AddInput(label, text, onChange)
