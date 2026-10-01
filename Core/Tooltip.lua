@@ -16,9 +16,11 @@ function Tooltip.AddIdentity(tooltip, charKey)
     if not store or not charKey then
         return false
     end
-    local lines = addon.TooltipFormatter.Lines(store:GetPerson(charKey), charKey, function(key)
+    local person = store:GetPerson(charKey)
+    local profile = person and addon.profiles and addon.profiles:Get(person.id)
+    local lines = addon.TooltipFormatter.Lines(person, charKey, function(key)
         return store:GetCharacterInfo(key)
-    end)
+    end, profile)
     if not lines then
         return false
     end

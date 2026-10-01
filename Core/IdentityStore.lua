@@ -24,7 +24,7 @@ end
 -- saved resolutions let ambiguous links keep what they resolved to before.
 function IdentityStore:Update(snapshot)
     self.snapshot = snapshot
-    local result = addon.IdentityResolver.resolve(snapshot, self.data.resolutions)
+    local result = addon.IdentityResolver.resolve(snapshot, self.data.resolutions, self.data.profiles)
     self.persons = result.persons
     self.charToPerson = result.charToPerson
     self.issues = result.issues
@@ -34,6 +34,13 @@ function IdentityStore:Update(snapshot)
     end
     self.data.resolutions = result.resolutions
     self.callbacks:Fire("IdentityChanged")
+end
+
+-- Re-resolves the last snapshot, e.g. after a profile alias changed.
+function IdentityStore:Refresh()
+    if self.snapshot then
+        self:Update(self.snapshot)
+    end
 end
 
 -- The person playing `charKey` (a normalized Name-Realm key), or nil.
@@ -150,9 +157,7 @@ function IdentityStore:ResolutionSyncHandler()
             return true
         end,
         Commit = function()
-            if self.snapshot then
-                self:Update(self.snapshot)
-            end
+            self:Refresh()
         end,
     }
 end

@@ -117,7 +117,7 @@ local function guildSettingsGroup(guild)
         type = "group",
         name = "Guild settings",
         inline = true,
-        order = 2,
+        order = 3,
         args = {
             status = {
                 type = "description",
@@ -184,8 +184,64 @@ local function guildSettingsGroup(guild)
     }
 end
 
+local PROFILE_FIELDS = {
+    { key = "discord", name = "Discord name",
+        desc = "Contact info only, so guildmates know who to message on Discord. Never used as your name." },
+    { key = "aliasFallback", name = "What to call me",
+        desc = "Your alias, if your main's guild note doesn't set one with @Alias (the note wins)." },
+    { key = "bio", name = "About me", desc = "A short bio guildmates see in tooltips and /gf who.", multiline = 3 },
+}
+
+-- The My Profile group. `guild` (see guildSettingsGroup) also provides:
+--   MyProfile()          this character's person's profile ({} if none), or nil
+--                        when the add-on doesn't know who this character is yet
+--   SaveProfile(fields)  saves fields; returns true, or false and a reason
+local function myProfileGroup(guild)
+    local args = {
+        status = {
+            type = "description",
+            order = 1,
+            name = function()
+                if guild.MyProfile() then
+                    return "Shared with guildmates who use the add-on. You can edit it from any of your characters."
+                end
+                return "Your profile is available once you're in a guild and the roster has loaded."
+            end,
+        },
+    }
+    for index, field in ipairs(PROFILE_FIELDS) do
+        local limit = addon.Profiles.LIMITS[field.key]
+        args[field.key] = {
+            type = "input",
+            name = field.name,
+            desc = ("%s Up to %d characters."):format(field.desc, limit),
+            order = index + 1,
+            width = "full",
+            multiline = field.multiline,
+            disabled = function()
+                return guild.MyProfile() == nil
+            end,
+            get = function()
+                local profile = guild.MyProfile()
+                return profile and profile[field.key] or ""
+            end,
+            validate = function(_, value)
+                local clean = addon.Profiles.Clean(value)
+                if clean and #clean > limit then
+                    return ("%s can be at most %d characters."):format(field.name, limit)
+                end
+                return true
+            end,
+            set = function(_, value)
+                guild.SaveProfile({ [field.key] = value })
+            end,
+        }
+    end
+    return { type = "group", name = "My profile", inline = true, order = 2, args = args }
+end
+
 -- `profile` returns the current AceDB profile; `guild` is described above
--- guildSettingsGroup.
+-- guildSettingsGroup and myProfileGroup.
 function Options.Build(profile, guild)
     return {
         type = "group",
@@ -216,6 +272,7 @@ function Options.Build(profile, guild)
                     },
                 },
             },
+            myProfile = myProfileGroup(guild),
             guildSettings = guildSettingsGroup(guild),
         },
     }

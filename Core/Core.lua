@@ -41,6 +41,15 @@ function Core:OnInitialize()
         Publish = function(ranks)
             return self:PublishGuildSettings(ranks)
         end,
+        MyProfile = function()
+            local person = addon.identity and addon.identity:GetPerson(self:PlayerKey())
+            if person then
+                return addon.profiles:Get(person.id) or {}
+            end
+        end,
+        SaveProfile = function(fields)
+            return self:SaveProfile(fields)
+        end,
     })
     for _, command in ipairs(addon.Commands.ALWAYS) do
         self:RegisterChatCommand(command, "HandleCommand")
@@ -93,6 +102,8 @@ function Core:Who(query)
     end
     local lines = addon.WhoFormatter.Lines(query, store:FindByQuery(query), function(key)
         return store:GetCharacterInfo(key)
+    end, function(personId)
+        return addon.profiles and addon.profiles:Get(personId)
     end)
     for _, line in ipairs(lines) do
         self:Print(line)
@@ -142,11 +153,16 @@ function Core:UpdateGuild()
         self.sync = self:NewSync()
         self.sync:RegisterType("resolution", addon.identity:ResolutionSyncHandler())
         self.sync:RegisterType("guildSettings", addon.guildSettings:SyncHandler())
+        addon.profiles = addon.Profiles.New(addon.guildData, addon.identity, function(charKey)
+            return addon.guildSettings:IsAddonOfficer(charKey)
+        end, GetServerTime)
+        self.sync:RegisterType("profile", addon.profiles:SyncHandler())
         self:RegisterEvent("GUILD_ROSTER_UPDATE", "OnGuildRosterUpdate")
         self.roster:Request()
     else
         addon.identity = nil
         addon.guildSettings = nil
+        addon.profiles = nil
         self:UnregisterEvent("GUILD_ROSTER_UPDATE")
     end
 end
@@ -171,6 +187,20 @@ function Core:PublishGuildSettings(officerRanks)
         self.sync:SendRecords("guildSettings", { addon.GuildSettings.RECORD_ID })
     end
     return true
+end
+
+-- Saves this character's person's profile fields and sends the result to the
+-- guild right away (when sync is on). Returns true, or false and a reason.
+function Core:SaveProfile(fields)
+    if not addon.profiles then
+        return false, "not in a guild"
+    end
+    local key = self:PlayerKey()
+    local ok, reason = addon.profiles:Save(key, fields)
+    if ok and self.sync and self.db.profile.sync.enabled then
+        self.sync:SendRecords("profile", { addon.identity:GetPerson(key).id })
+    end
+    return ok, reason
 end
 
 function Core:NewSync()

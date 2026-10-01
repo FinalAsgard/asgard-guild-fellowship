@@ -61,6 +61,9 @@ function Harness.new(options)
         GetTime = function()
             return self.now
         end,
+        GetServerTime = function()
+            return 0
+        end,
         C_Timer = {
             After = function(delay, callback)
                 table.insert(self.timers, { at = self.now + delay, callback = callback })

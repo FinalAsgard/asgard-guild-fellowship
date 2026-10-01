@@ -83,3 +83,35 @@ function SyncMerge.GuildSettings(record, current, senderKey, members, ranks)
     end
     return true
 end
+
+-- A profile record for person `personId` (see Profiles). Accepted only when it
+-- is newer, its fields are strings within the limits, and its author character
+-- currently resolves to that person in the receiver's view, so nobody can edit
+-- someone else's profile. It must also come from that person's own character or
+-- from a trusted relay (an addon officer): a relayed record can't prove who
+-- wrote it, so only officers may pass on other people's profiles.
+-- `personOf(charKey)` -> person id; `isTrustedRelay(charKey)` -> boolean.
+-- Returns true, or false and one of: malformed, not newer, not their character,
+-- untrusted relay.
+function SyncMerge.Profile(personId, record, current, senderKey, personOf, isTrustedRelay)
+    if type(personId) ~= "string" or type(record) ~= "table" or type(record.version) ~= "number"
+        or type(record.author) ~= "string" then
+        return false, "malformed"
+    end
+    for field, limit in pairs(addon.Profiles.LIMITS) do
+        local value = record[field]
+        if value ~= nil and (type(value) ~= "string" or #value > limit) then
+            return false, "malformed"
+        end
+    end
+    if current and type(current.version) == "number" and record.version <= current.version then
+        return false, "not newer"
+    end
+    if personOf(record.author) ~= personId then
+        return false, "not their character"
+    end
+    if personOf(senderKey) ~= personId and not isTrustedRelay(senderKey) then
+        return false, "untrusted relay"
+    end
+    return true
+end

@@ -25,8 +25,9 @@ local function characterLine(info, isMain)
 end
 
 -- Lines describing `persons` (from IdentityStore:FindByQuery) for `query`.
--- `infoFor(key)` returns a character's roster entry.
-function WhoFormatter.Lines(query, persons, infoFor)
+-- `infoFor(key)` returns a character's roster entry; `profileFor(personId)`
+-- returns the person's profile or nil.
+function WhoFormatter.Lines(query, persons, infoFor, profileFor)
     if #persons == 0 then
         return { ('No guildmate matches "%s". Try a character name, first name, or alias.'):format(query) }
     end
@@ -42,6 +43,13 @@ function WhoFormatter.Lines(query, persons, infoFor)
             if info then
                 table.insert(lines, characterLine(info, key == person.mainKey))
             end
+        end
+        local profile = profileFor and profileFor(person.id)
+        if profile and profile.discord then
+            table.insert(lines, "  Discord: " .. profile.discord)
+        end
+        if profile and profile.bio then
+            table.insert(lines, "  Bio: " .. profile.bio)
         end
     end
     return lines

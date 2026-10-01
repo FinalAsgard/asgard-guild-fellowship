@@ -560,4 +560,82 @@ describe("Core", function()
             assert.is_false(other.ns.guildSettings:IsAddonOfficer("Member-Forever"))
         end)
     end)
+
+    describe("profiles", function()
+        local ROSTER = {
+            { name = "Dresden Zelwindran", guid = "G-D", note = "", rankIndex = 3 },
+            { name = "Malgen Zelwindran", guid = "G-M", note = ">Dresden", rankIndex = 3 },
+            { name = "Kira", guid = "G-K", note = "", rankIndex = 3 },
+        }
+
+        local function client(name)
+            local ns, log, harness = boot({
+                client = "Forever", guild = { name = "Asgard" }, roster = ROSTER,
+                units = { player = { name = name, player = true } },
+            })
+            ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", false)
+            harness:advance(1)
+            return { name = name, ns = ns, log = log, harness = harness,
+                options = log.options.registered.table.args.myProfile.args }
+        end
+
+        local function deliver(from, to)
+            local sent = from.log.addon.sent
+            from.log.addon.sent = {}
+            for _, message in ipairs(sent) do
+                to.ns.Core:OnCommReceived(message.prefix, message.message, message.distribution, from.name)
+            end
+        end
+
+        it("edits the person's profile from an alt through the My Profile panel", function()
+            local alt = client("Malgen Zelwindran")
+            assert.is_false(alt.options.discord.disabled())
+            alt.options.discord.set(nil, "zelly")
+            alt.options.aliasFallback.set(nil, "Zel")
+            alt.options.bio.set(nil, "Tank and healer")
+            assert.are.equal("zelly", alt.options.discord.get())
+            assert.are.same({ version = 3, author = "Malgen Zelwindran-Forever", discord = "zelly",
+                aliasFallback = "Zel", bio = "Tank and healer" }, alt.ns.profiles:Get("G-D"))
+            assert.are.equal("Zel", alt.ns.identity:GetDisplayName("G-D"))
+        end)
+
+        it("rejects over-long values in the panel", function()
+            local alt = client("Malgen Zelwindran")
+            assert.is_true(alt.options.discord.validate(nil, "zelly"))
+            assert.is_string(alt.options.discord.validate(nil, string.rep("x", 40)))
+        end)
+
+        it("disables the panel outside a guild", function()
+            local _, log = boot({ units = { player = { name = "Nobody", player = true } } })
+            local options = log.options.registered.table.args.myProfile.args
+            assert.is_true(options.discord.disabled())
+            assert.are.equal("", options.discord.get())
+        end)
+
+        it("reaches guildmates, who show the alias, Discord name, and bio", function()
+            local alt = client("Malgen Zelwindran")
+            local friend = client("Kira")
+            alt.options.aliasFallback.set(nil, "Zel")
+            alt.options.discord.set(nil, "zelly")
+            deliver(alt, friend)
+            assert.are.equal("Zel", friend.ns.identity:GetDisplayName("G-D"))
+            assert.are.equal("[Zel] hi", friend.harness:chat("CHAT_MSG_GUILD", "hi", "Malgen Zelwindran"))
+            friend.ns.Core:HandleCommand("who Zel")
+            assert.are.same({
+                "Zel (main: Dresden Zelwindran)",
+                "  Dresden Zelwindran (main) - offline",
+                "  Malgen Zelwindran - offline",
+                "  Discord: zelly",
+            }, friend.log.addon.printed)
+        end)
+
+        it("ignores a profile someone sends for another person", function()
+            local impostor = client("Kira")
+            local victim = client("Malgen Zelwindran")
+            impostor.ns.profiles.data.profiles["G-D"] = { version = 5, author = "Kira-Forever", bio = "fake" }
+            impostor.ns.Core.sync:SendRecords("profile", { "G-D" })
+            deliver(impostor, victim)
+            assert.is_nil(victim.ns.profiles:Get("G-D"))
+        end)
+    end)
 end)

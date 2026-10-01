@@ -83,4 +83,27 @@ describe("TooltipFormatter.Lines", function()
         end)
         assert.are.equal("5", lines[3].right)
     end)
+
+    describe("profile", function()
+        it("adds Discord as a labelled contact line and the bio", function()
+            local lines = TooltipFormatter.Lines(person({ "Dresden-F", "Malgen-F" }), "Dresden-F", infoFor,
+                { discord = "zel", bio = "Loves dungeons" })
+            assert.are.same({ left = "Discord", right = "zel", color = COLORS.text }, lines[4])
+            assert.are.same({ left = "Loves dungeons", color = COLORS.offline }, lines[5])
+            assert.are.equal("Dresden", lines[1].left)
+        end)
+
+        it("shows a lone main's section when they have a profile", function()
+            local lines = TooltipFormatter.Lines(person({ "Dresden-F" }), "Dresden-F", infoFor, { discord = "zel" })
+            assert.are.equal(3, #lines)
+        end)
+
+        it("truncates a long bio", function()
+            local bio = string.rep("a", 58) .. "éé"
+            local lines = TooltipFormatter.Lines(person({ "Dresden-F" }), "Dresden-F", infoFor, { bio = bio })
+            assert.are.equal(string.rep("a", 58) .. "...", lines[3].left)
+            local short = TooltipFormatter.Lines(person({ "Dresden-F" }), "Dresden-F", infoFor, { bio = "short" })
+            assert.are.equal("short", short[3].left)
+        end)
+    end)
 end)

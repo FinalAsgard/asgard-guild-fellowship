@@ -102,4 +102,15 @@ describe("WhoFormatter.Lines", function()
         assert.are.same({ 'No guildmate matches "Nobody". Try a character name, first name, or alias.' },
             lines("Nobody"))
     end)
+
+    it("adds the person's Discord name and bio", function()
+        local s2, ns = store()
+        local result = ns.WhoFormatter.Lines("Zel", s2:FindByQuery("Zel"), function(key)
+            return s2:GetCharacterInfo(key)
+        end, function(personId)
+            return personId == "G-D" and { discord = "zelly", bio = "Tank and healer" } or nil
+        end)
+        assert.are.equal("  Discord: zelly", result[4])
+        assert.are.equal("  Bio: Tank and healer", result[5])
+    end)
 end)

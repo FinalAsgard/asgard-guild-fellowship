@@ -66,9 +66,11 @@ function IdentityResolver.Candidates(index, ref, exclude)
     return candidates, #matches
 end
 
--- resolve(snapshot, cachedResolutions) -> { persons, charToPerson, resolutions, issues }
+-- resolve(snapshot, cachedResolutions, profiles) -> { persons, charToPerson, resolutions, issues }
 --   snapshot: list of { key, guid, name, note, ... } (key is Name-Realm, name has no realm)
 --   cachedResolutions: the `resolutions` from an earlier run, or nil
+--   profiles: person id -> profile, or nil; only `aliasFallback` is used. The
+--     alias is the main's note @Alias, else the profile's aliasFallback.
 --   persons[id]: { id, mainKey, characters, alias, shortName, displayName }
 --     id is the main's GUID; characters lists the main first, then alts by key.
 --   charToPerson[key]: person id
@@ -76,8 +78,9 @@ end
 --     for each linked alt, plus the last known link of each orphaned alt
 --   issues: list of { type, characters, ref, fix }, where type is one of
 --     ambiguous, chain, cycle, orphan, unresolved
-function IdentityResolver.resolve(snapshot, cachedResolutions)
+function IdentityResolver.resolve(snapshot, cachedResolutions, profiles)
     cachedResolutions = cachedResolutions or {}
+    profiles = profiles or {}
     local index = IdentityResolver.Index(snapshot)
     local byFullName, byFirstName, notes = index.byFullName, index.byFirstName, index.notes
 
@@ -191,7 +194,7 @@ function IdentityResolver.resolve(snapshot, cachedResolutions)
         local person = persons[id]
         if not person then
             local short = shortestName(main)
-            local alias = notes[main.key].alias
+            local alias = notes[main.key].alias or (profiles[id] and profiles[id].aliasFallback)
             person = {
                 id = id,
                 mainKey = main.key,
