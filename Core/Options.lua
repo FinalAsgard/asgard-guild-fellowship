@@ -262,6 +262,14 @@ local function messageList(profile, field, name, order, defaults)
             end
             return table.concat(messages, "\n")
         end,
+        validate = function(_, value)
+            for line in (value or ""):gmatch("[^\r\n]+") do
+                if #line > addon.GreetComposer.MAX_TEMPLATE then
+                    return ("Each message can be at most %d characters."):format(addon.GreetComposer.MAX_TEMPLATE)
+                end
+            end
+            return true
+        end,
         set = function(_, value)
             local lines = {}
             for line in (value or ""):gmatch("[^\r\n]+") do

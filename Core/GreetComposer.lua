@@ -7,6 +7,8 @@ addon.GreetComposer = GreetComposer
 
 -- The longest line guild chat accepts.
 GreetComposer.MAX_LINE = 255
+-- The longest message a player may write, leaving room under MAX_LINE for names.
+GreetComposer.MAX_TEMPLATE = 200
 
 -- Used until the player writes their own.
 GreetComposer.DEFAULT_RETURN = {
@@ -44,14 +46,14 @@ end
 
 -- The usable templates: color codes (|cAARRGGBB ... |r) and any other "|"
 -- (WoW's escape character) or control characters removed, surrounding space
--- trimmed, blank entries dropped.
+-- trimmed, blank entries and entries over MAX_TEMPLATE dropped.
 function GreetComposer.Clean(templates)
     local result = {}
     for _, template in ipairs(templates or {}) do
         if type(template) == "string" then
             local clean = template:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("[%c|]", "")
             clean = clean:gsub("^%s+", ""):gsub("%s+$", "")
-            if clean ~= "" then
+            if clean ~= "" and #clean <= GreetComposer.MAX_TEMPLATE then
                 table.insert(result, clean)
             end
         end

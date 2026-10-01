@@ -378,7 +378,9 @@ end
 -- Greet notices the arrival within seconds rather than at the next update.
 -- A "has joined the guild" message offers Guild Greet's welcome.
 function Core:OnSystemMessage(_, message)
-    if not addon.identity or not self.db.profile.greet.enabled then
+    -- Retail can hand add-ons secret values (e.g. in instances); leave those alone.
+    if not addon.identity or not self.db.profile.greet.enabled or type(message) ~= "string"
+        or addon.Compat.IsSecret(message) then
         return
     end
     local joined = addon.Compat.JoinedGuildName(message)

@@ -1064,6 +1064,28 @@ describe("Core", function()
             assert.are.equal("Kira came online.", prompt().text)
         end)
 
+        it("ignores system messages the client hides from add-ons", function()
+            local ns, harness = start(true)
+            harness:advance(30)
+            harness.env.issecretvalue = function(value)
+                return type(value) == "string" and value:find("secret", 1, true) ~= nil
+            end
+            local before = harness.rosterRequests
+            assert.has_no.errors(function()
+                ns.Core:OnSystemMessage("CHAT_MSG_SYSTEM", "secret has joined the guild.")
+                ns.Core:OnSystemMessage("CHAT_MSG_SYSTEM", nil)
+            end)
+            assert.are.equal(before, harness.rosterRequests)
+            assert.is_false(ns.Core.greeter.prompt:IsShown())
+        end)
+
+        it("rejects over-long messages in settings", function()
+            local _, _, _, _, _, log = start(true)
+            local messages = log.options.registered.table.args.features.args.greetMessages
+            assert.is_true(messages.validate(nil, "Hi {name}!\nHey {name}!"))
+            assert.is_string(messages.validate(nil, "Hi {name}!\n" .. string.rep("x", 201)))
+        end)
+
         it("asks for the roster when the game announces someone came online", function()
             local ns, harness = start(true)
             harness:advance(30)
