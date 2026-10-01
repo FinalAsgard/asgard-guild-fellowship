@@ -44,16 +44,29 @@ function GreetComposer.Fill(template, names)
     return template .. " " .. joined
 end
 
+-- Why `template` can't be used, or nil when it's fine: over MAX_TEMPLATE, or
+-- {name} more than once (each copy expands to every name being greeted).
+function GreetComposer.Problem(template)
+    if #template > GreetComposer.MAX_TEMPLATE then
+        return ("Each message can be at most %d characters."):format(GreetComposer.MAX_TEMPLATE)
+    end
+    local _, count = template:gsub("{name}", "")
+    if count > 1 then
+        return "Use {name} at most once per message."
+    end
+end
+
 -- The usable templates: color codes (|cAARRGGBB ... |r) and any other "|"
 -- (WoW's escape character) or control characters removed, surrounding space
--- trimmed, blank entries and entries over MAX_TEMPLATE dropped.
+-- trimmed. Blank entries are dropped, and so are entries that could exceed the
+-- chat limit: over MAX_TEMPLATE, or with {name} more than once.
 function GreetComposer.Clean(templates)
     local result = {}
     for _, template in ipairs(templates or {}) do
         if type(template) == "string" then
             local clean = template:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("[%c|]", "")
             clean = clean:gsub("^%s+", ""):gsub("%s+$", "")
-            if clean ~= "" and #clean <= GreetComposer.MAX_TEMPLATE then
+            if clean ~= "" and GreetComposer.Problem(clean) == nil then
                 table.insert(result, clean)
             end
         end

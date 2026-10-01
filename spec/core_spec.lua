@@ -1084,6 +1084,7 @@ describe("Core", function()
             local messages = log.options.registered.table.args.features.args.greetMessages
             assert.is_true(messages.validate(nil, "Hi {name}!\nHey {name}!"))
             assert.is_string(messages.validate(nil, "Hi {name}!\n" .. string.rep("x", 201)))
+            assert.are.equal("Use {name} at most once per message.", messages.validate(nil, "{name} and {name}"))
         end)
 
         it("asks for the roster when the game announces someone came online", function()

@@ -264,8 +264,9 @@ local function messageList(profile, field, name, order, defaults)
         end,
         validate = function(_, value)
             for line in (value or ""):gmatch("[^\r\n]+") do
-                if #line > addon.GreetComposer.MAX_TEMPLATE then
-                    return ("Each message can be at most %d characters."):format(addon.GreetComposer.MAX_TEMPLATE)
+                local problem = addon.GreetComposer.Problem(line)
+                if problem then
+                    return problem
                 end
             end
             return true
