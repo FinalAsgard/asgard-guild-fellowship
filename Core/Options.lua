@@ -264,7 +264,8 @@ function Options.Build(profile, guild)
                         type = "toggle",
                         name = "Guild Greet",
                         desc = "When guildmates come online, show a prompt to greet them in guild chat. "
-                            .. "Nothing is posted unless you click Greet.",
+                            .. "Nothing is posted unless you click Greet. With sync on, at most two players "
+                            .. "greet each arrival; with sync off, your prompt ignores what others did.",
                         width = "full",
                         order = 3,
                         get = function()

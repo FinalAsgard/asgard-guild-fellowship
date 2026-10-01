@@ -1151,4 +1151,141 @@ describe("Core", function()
             end)
         end)
     end)
+
+    describe("Guild Greet across add-on users", function()
+        local function roster()
+            return {
+                { name = "Anna", guid = "G-A", note = "", online = true },
+                { name = "Bert", guid = "G-B", note = "", online = true },
+                { name = "Cara", guid = "G-C", note = "", online = true },
+                { name = "Dresden Zelwindran", guid = "G-D", note = "@Zel", online = false },
+                { name = "Malgen", guid = "G-M", note = ">Dresden", online = false },
+                { name = "Kira", guid = "G-K", note = "", online = false },
+            }
+        end
+
+        local function client(name)
+            local ns, log, harness = boot({
+                client = "Forever", guild = { name = "Asgard" }, roster = roster(),
+                units = { player = { name = name, player = true } },
+            })
+            local features = log.options.registered.table.args.features.args
+            features.greet.set(nil, true)
+            local c = { name = name, ns = ns, log = log, harness = harness, features = features }
+            function c.update()
+                ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", false)
+                harness:advance(1)
+            end
+            function c.online(index)
+                harness.options.roster[index].online = true
+                c.update()
+            end
+            function c.prompt()
+                if not ns.Core.greeter.prompt:IsShown() then
+                    return nil
+                end
+                local frame = ns.Core.greeter.prompt.frame
+                local result = { buttons = {} }
+                for _, child in ipairs(frame.children) do
+                    if child.kind == "Label" then
+                        result.text = child.text
+                    else
+                        result.buttons[child.text] = child
+                    end
+                end
+                return result
+            end
+            c.update()
+            return c
+        end
+
+        -- Delivers each client's add-on messages to every other client.
+        local function relay(clients)
+            for _, from in ipairs(clients) do
+                local sent = from.log.addon.sent
+                from.log.addon.sent = {}
+                for _, message in ipairs(sent) do
+                    for _, to in ipairs(clients) do
+                        if to ~= from then
+                            to.ns.Core:OnCommReceived(message.prefix, message.message, message.distribution, from.name)
+                        end
+                    end
+                end
+            end
+        end
+
+        local function three()
+            local clients = { client("Anna"), client("Bert"), client("Cara") }
+            for _, c in ipairs(clients) do
+                c.online(6)
+            end
+            relay(clients)
+            return clients[1], clients[2], clients[3]
+        end
+
+        it("lets two players greet an arrival, then removes them from everyone else's prompt", function()
+            local anna, bert, cara = three()
+            assert.are.equal("Kira came online.", cara.prompt().text)
+            anna.prompt().buttons.Greet.callbacks.OnClick()
+            relay({ anna, bert, cara })
+            assert.are.equal("Kira came online.", bert.prompt().text)
+            assert.are.equal("Kira came online.", cara.prompt().text)
+            bert.prompt().buttons.Greet.callbacks.OnClick()
+            relay({ anna, bert, cara })
+            assert.is_nil(cara.prompt())
+            assert.are.equal(1, #anna.harness.chatSent)
+            assert.are.equal(1, #bert.harness.chatSent)
+            assert.are.equal(0, #cara.harness.chatSent)
+        end)
+
+        it("doesn't offer someone who already has two greetings when they reach a slower client", function()
+            local anna, bert = client("Anna"), client("Bert")
+            local cara = client("Cara")
+            anna.online(6)
+            bert.online(6)
+            anna.prompt().buttons.Greet.callbacks.OnClick()
+            bert.prompt().buttons.Greet.callbacks.OnClick()
+            relay({ anna, bert, cara })
+            cara.online(6)
+            assert.is_nil(cara.prompt())
+        end)
+
+        it("only removes the people a greeting covered, and matches them by person", function()
+            local _, _, cara = three()
+            cara.online(5)
+            assert.are.equal("Kira and Zel came online.", cara.prompt().text)
+            cara.ns.Core.greeter:OnClaim({ "G-D" }, "Anna-Forever")
+            cara.ns.Core.greeter:OnClaim({ "G-D" }, "Bert-Forever")
+            assert.are.equal("Kira came online.", cara.prompt().text)
+        end)
+
+        it("counts each greeter once", function()
+            local _, _, cara = three()
+            cara.ns.Core.greeter:OnClaim({ "G-K" }, "Anna-Forever")
+            cara.ns.Core.greeter:OnClaim({ "G-K" }, "Anna-Forever")
+            assert.are.equal("Kira came online.", cara.prompt().text)
+        end)
+
+        it("ignores other players' greetings when sync is off", function()
+            local anna, bert, cara = three()
+            cara.features.sync.set(nil, false)
+            anna.prompt().buttons.Greet.callbacks.OnClick()
+            bert.prompt().buttons.Greet.callbacks.OnClick()
+            relay({ anna, bert, cara })
+            assert.are.equal("Kira came online.", cara.prompt().text)
+        end)
+
+        it("ignores malformed announcements", function()
+            local _, _, cara = three()
+            local greeter = cara.ns.Core.greeter
+            for _, sender in ipairs({ "Anna-Forever", "Bert-Forever" }) do
+                greeter:OnClaim(nil, sender)
+                greeter:OnClaim("G-K", sender)
+                greeter:OnClaim({ 5, {} }, sender)
+            end
+            greeter:OnClaim({ "G-K" }, nil)
+            greeter:OnClaim({ "G-K" }, 42)
+            assert.are.equal("Kira came online.", cara.prompt().text)
+        end)
+    end)
 end)

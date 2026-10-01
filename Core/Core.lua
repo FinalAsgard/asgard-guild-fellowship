@@ -96,6 +96,11 @@ function Core:OnInitialize()
         now = GetTime,
         after = C_Timer.After,
         inCombat = InCombatLockdown,
+        announce = function(personIds)
+            if self.sync then
+                self.sync:Announce("greet", { persons = personIds })
+            end
+        end,
     })
     for _, command in ipairs(addon.Commands.ALWAYS) do
         self:RegisterChatCommand(command, "HandleCommand")
@@ -349,6 +354,9 @@ function Core:UpdateGuild()
             return addon.guildSettings:IsAddonOfficer(charKey)
         end)
         self.sync:RegisterType("profile", addon.profiles:SyncHandler())
+        self.sync:Listen("greet", function(data, sender)
+            self.greeter:OnClaim(type(data) == "table" and data.persons, sender)
+        end)
         -- Keep the main panel current as identity and officer ranks change.
         addon.identity.RegisterCallback(self, "IdentityChanged", "RefreshMainPanel")
         addon.guildSettings.RegisterCallback(self, "GuildSettingsChanged", "RefreshMainPanel")
