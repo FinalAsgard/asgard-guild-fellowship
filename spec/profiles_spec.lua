@@ -25,6 +25,8 @@ local function setup(roster, guildData)
     store:Update(roster or ROSTER)
     local profiles = ns.Profiles.New(store.data, store, function()
         return 0
+    end, function(key)
+        return key == "Officer-Forever"
     end)
     return profiles, store, ns
 end
@@ -214,5 +216,111 @@ describe("SyncMerge.Profile", function()
         end
         assert.are.same({ false, "malformed" },
             { ns.SyncMerge.Profile(nil, { version = 1, author = "Malgen-Forever" }, nil, personOf) })
+    end)
+end)
+
+describe("officer clears", function()
+    local function saved(profiles)
+        profiles:Save("Malgen-Forever", { discord = "zelly", aliasFallback = "Zel", bio = "rude words" })
+        return profiles
+    end
+
+    it("lets an officer blank the bio, keeping everything else", function()
+        local profiles, store = setup()
+        saved(profiles)
+        assert.is_true(profiles:Clear("G-Dresden Zelwindran", { "bio" }, "Officer-Forever"))
+        local profile = profiles:Get("G-Dresden Zelwindran")
+        assert.is_nil(profile.bio)
+        assert.are.equal("zelly", profile.discord)
+        assert.are.equal("Zel", profile.aliasFallback)
+        assert.are.equal("Malgen-Forever", profile.author)
+        assert.are.equal("Zel", store:GetPerson("Malgen-Forever").displayName)
+    end)
+
+    it("clears the alias, so the display name falls back", function()
+        local profiles, store = setup()
+        saved(profiles)
+        profiles:Clear("G-Dresden Zelwindran", { "aliasFallback" }, "Officer-Forever")
+        assert.are.equal("Dresden", store:GetPerson("Malgen-Forever").displayName)
+    end)
+
+    it("refuses non-officers and empty clears", function()
+        local profiles = setup()
+        saved(profiles)
+        assert.are.same({ false, "not an officer" },
+            { profiles:Clear("G-Dresden Zelwindran", { "bio" }, "Kira-Forever") })
+        assert.are.same({ false, "nothing to clear" }, { profiles:Clear("G-Kira", { "bio" }, "Officer-Forever") })
+    end)
+
+    it("lets the owner set new content afterwards", function()
+        local profiles = setup()
+        saved(profiles)
+        profiles:Clear("G-Dresden Zelwindran", { "bio" }, "Officer-Forever")
+        assert.is_true(profiles:Save("Dresden Zelwindran-Forever", { bio = "Nicer words" }))
+        local profile = profiles:Get("G-Dresden Zelwindran")
+        assert.are.equal("Nicer words", profile.bio)
+        assert.is_nil(profile.clearedBy)
+    end)
+
+    it("passes a clear on as a content-free clear record that other clients apply", function()
+        local officerSide = setup()
+        saved(officerSide)
+        local before = officerSide:SyncHandler().Get("G-Dresden Zelwindran")
+        officerSide:Clear("G-Dresden Zelwindran", { "bio" }, "Officer-Forever")
+        local clear = officerSide:SyncHandler().Get("G-Dresden Zelwindran")
+        assert.are.same({ version = before.version + 1, author = "Officer-Forever", clear = { "bio" } }, clear)
+
+        local other = setup()
+        local handler = other:SyncHandler()
+        assert.is_true(handler.Receive("G-Dresden Zelwindran", before))
+        assert.is_true(handler.Receive("G-Dresden Zelwindran", clear))
+        local profile = other:Get("G-Dresden Zelwindran")
+        assert.is_nil(profile.bio)
+        assert.are.equal("zelly", profile.discord)
+        assert.are.same(clear, handler.Get("G-Dresden Zelwindran"))
+    end)
+end)
+
+describe("SyncMerge.Profile clears", function()
+    local ns = load()
+    local function personOf(key)
+        return ({ ["Malgen-Forever"] = "G-D", ["Officer-Forever"] = "G-O", ["Kira-Forever"] = "G-K" })[key]
+    end
+    local function isOfficer(key)
+        return key == "Officer-Forever"
+    end
+    local function check(record, current)
+        return { ns.SyncMerge.Profile("G-D", record, current, personOf, isOfficer) }
+    end
+
+    it("accepts an officer clear", function()
+        assert.are.same({ true },
+            check({ version = 2, author = "Officer-Forever", clear = { "bio" } }, { version = 1 }))
+        assert.are.same({ true },
+            check({ version = 2, author = "Officer-Forever", clear = { "bio", "aliasFallback" } }))
+    end)
+
+    it("rejects a clear from a non-officer", function()
+        assert.are.same({ false, "not an officer" }, check({ version = 2, author = "Kira-Forever", clear = { "bio" } }))
+        assert.are.same({ false, "not an officer" },
+            check({ version = 2, author = "Malgen-Forever", clear = { "bio" } }))
+    end)
+
+    it("rejects an officer clear that carries new text", function()
+        assert.are.same({ false, "clear with content" },
+            check({ version = 2, author = "Officer-Forever", clear = { "bio" }, bio = "officer's words" }))
+        assert.are.same({ false, "clear with content" },
+            check({ version = 2, author = "Officer-Forever", clear = { "bio" }, discord = "someone" }))
+    end)
+
+    it("applies version rules to clears", function()
+        assert.are.same({ false, "not newer" },
+            check({ version = 2, author = "Officer-Forever", clear = { "bio" } }, { version = 2 }))
+    end)
+
+    it("rejects clears of other fields or malformed clears", function()
+        for _, clear in ipairs({ {}, "bio", { "discord" }, { "bio", "author" } }) do
+            assert.are.same({ false, "malformed" }, check({ version = 2, author = "Officer-Forever", clear = clear }))
+        end
     end)
 end)

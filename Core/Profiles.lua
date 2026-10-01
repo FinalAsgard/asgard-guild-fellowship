@@ -2,9 +2,16 @@ local _, addon = ...
 
 -- Each person's synced profile, keyed by person ID (the main's GUID) and kept
 -- per guild in `guildData.profiles`:
---   { discord?, aliasFallback?, bio?, version = number, author = charKey }
+--   { discord?, aliasFallback?, bio?, version = number, author = charKey,
+--     clearedBy?, cleared? }
 -- `discord` is contact info only: it is shown labelled as Discord and is never a
 -- display name, tag, search key, or alias.
+--
+-- Addon officers can clear (never rewrite) a person's bio or alias. A clear is
+-- its own update, synced as { version, author = officer, clear = { fields } }
+-- with no content. Applied, it blanks those fields of the profile; the result
+-- remembers `clearedBy`/`cleared` so it is passed on as the same clear. The
+-- owner's next save replaces it as usual.
 local Profiles = {}
 Profiles.__index = Profiles
 addon.Profiles = Profiles
@@ -12,6 +19,8 @@ addon.Profiles = Profiles
 Profiles.FIELDS = { "discord", "aliasFallback", "bio" }
 -- Maximum length of each field, in bytes.
 Profiles.LIMITS = { discord = 32, aliasFallback = 24, bio = 200 }
+-- Fields an officer may clear.
+Profiles.CLEARABLE = { bio = true, aliasFallback = true }
 
 -- Normalizes a field value: control characters and "|" (WoW's escape
 -- character) become spaces, whitespace collapses, and an empty value is nil.
@@ -29,15 +38,16 @@ end
 
 -- `store`: IdentityStore (who a character is). `now()`: the server time in
 -- seconds, so a saved version beats any older one even after a reinstall wiped
--- the local copy.
+-- the local copy. `isOfficer(charKey)`: whether a character may clear profiles.
 -- Fires ProfileChanged(personId); register with
 -- profiles.RegisterCallback(owner, "ProfileChanged", handler).
-function Profiles.New(guildData, store, now)
+function Profiles.New(guildData, store, now, isOfficer)
     guildData.profiles = guildData.profiles or {}
     local profiles = setmetatable({
         data = guildData,
         store = store,
         now = now,
+        isOfficer = isOfficer,
     }, Profiles)
     profiles.callbacks = LibStub("CallbackHandler-1.0"):New(profiles)
     return profiles
@@ -78,6 +88,43 @@ function Profiles:Save(charKey, fields)
     return true
 end
 
+-- `profile` with `fields` blanked by officer `officerKey`, at `version`.
+local function cleared(profile, fields, officerKey, version)
+    local result = { version = version, author = profile.author, clearedBy = officerKey, cleared = fields }
+    local blank = {}
+    for _, field in ipairs(fields) do
+        blank[field] = true
+    end
+    for _, field in ipairs(Profiles.FIELDS) do
+        if not blank[field] then
+            result[field] = profile[field]
+        end
+    end
+    return result
+end
+
+-- Clears `fields` (bio and/or aliasFallback) of person `personId`'s profile as
+-- officer `officerKey`. Returns true, or false and a reason ("not an officer",
+-- "nothing to clear").
+function Profiles:Clear(personId, fields, officerKey)
+    if not self.isOfficer(officerKey) then
+        return false, "not an officer"
+    end
+    local current = self.data.profiles[personId]
+    local hasContent = false
+    for _, field in ipairs(fields) do
+        assert(Profiles.CLEARABLE[field], "not a clearable field: " .. tostring(field))
+        hasContent = hasContent or (current and current[field] ~= nil)
+    end
+    if not hasContent then
+        return false, "nothing to clear"
+    end
+    local version = math.max(current.version + 1, self.now())
+    self.data.profiles[personId] = cleared(current, fields, officerKey, version)
+    self:Changed(personId)
+    return true
+end
+
 -- The Sync record-type handler ("profile"), keyed by person ID.
 function Profiles:SyncHandler()
     local changed = {}
@@ -94,18 +141,26 @@ function Profiles:SyncHandler()
             return versions
         end,
         Get = function(personId)
-            return self.data.profiles[personId]
+            local profile = self.data.profiles[personId]
+            if profile and profile.clearedBy then
+                return { version = profile.version, author = profile.clearedBy, clear = profile.cleared }
+            end
+            return profile
         end,
         Receive = function(personId, record)
-            local accepted = addon.SyncMerge.Profile(personId, record, self.data.profiles[personId], personOf)
-            if not accepted then
+            local current = self.data.profiles[personId]
+            if not addon.SyncMerge.Profile(personId, record, current, personOf, self.isOfficer) then
                 return false
             end
-            local clean = { version = record.version, author = record.author }
-            for _, field in ipairs(Profiles.FIELDS) do
-                clean[field] = Profiles.Clean(record[field])
+            if record.clear then
+                self.data.profiles[personId] = cleared(current or {}, record.clear, record.author, record.version)
+            else
+                local clean = { version = record.version, author = record.author }
+                for _, field in ipairs(Profiles.FIELDS) do
+                    clean[field] = Profiles.Clean(record[field])
+                end
+                self.data.profiles[personId] = clean
             end
-            self.data.profiles[personId] = clean
             changed[personId] = true
             return true
         end,

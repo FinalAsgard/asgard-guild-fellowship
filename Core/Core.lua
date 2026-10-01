@@ -82,9 +82,13 @@ function Core:HandleCommand(input)
         who = function(query)
             self:Who(query)
         end,
+        clear = function(rest)
+            self:ClearProfile(rest)
+        end,
         usage = function()
             self:Print("/fellowship opens the main panel. /fellowship version prints the version.")
             self:Print("/fellowship who <name> looks up a guildmate by character name, first name, or alias.")
+            self:Print("/fellowship clear <bio|alias> <name> (addon officers) clears someone's bio or alias.")
         end,
     })
 end
@@ -108,6 +112,41 @@ function Core:Who(query)
     for _, line in ipairs(lines) do
         self:Print(line)
     end
+end
+
+-- /gf clear words -> profile fields.
+local CLEAR_FIELDS = { bio = "bio", alias = "aliasFallback" }
+
+-- /gf clear <bio|alias> <name>: an addon officer clears an inappropriate bio or
+-- profile alias. The name must pick out exactly one person.
+function Core:ClearProfile(input)
+    local word, query = input:match("^(%S+)%s+(.-)%s*$")
+    local field = word and CLEAR_FIELDS[word:lower()]
+    if not field or query == "" then
+        self:Print("Usage: /fellowship clear <bio|alias> <character name, first name, or alias>")
+        return
+    end
+    if not addon.profiles then
+        self:Print("You're not in a guild, or the roster hasn't loaded yet.")
+        return
+    end
+    local persons = addon.identity:FindByQuery(query)
+    if #persons ~= 1 then
+        self:Print(#persons == 0 and ('No guildmate matches "%s".'):format(query)
+            or ('"%s" matches more than one person. Use a full character name.'):format(query))
+        return
+    end
+    local person = persons[1]
+    local ok, reason = addon.profiles:Clear(person.id, { field }, self:PlayerKey())
+    if not ok then
+        self:Print(reason == "not an officer" and "Only addon officers can clear profiles."
+            or ("%s has no %s to clear."):format(person.shortName, word:lower()))
+        return
+    end
+    if self.sync and self.db.profile.sync.enabled then
+        self.sync:SendRecords("profile", { person.id })
+    end
+    self:Print(("Cleared %s's %s."):format(person.shortName, word:lower()))
 end
 
 function Core:CreateLauncher()
@@ -153,7 +192,9 @@ function Core:UpdateGuild()
         self.sync = self:NewSync()
         self.sync:RegisterType("resolution", addon.identity:ResolutionSyncHandler())
         self.sync:RegisterType("guildSettings", addon.guildSettings:SyncHandler())
-        addon.profiles = addon.Profiles.New(addon.guildData, addon.identity, GetServerTime)
+        addon.profiles = addon.Profiles.New(addon.guildData, addon.identity, GetServerTime, function(charKey)
+            return addon.guildSettings:IsAddonOfficer(charKey)
+        end)
         self.sync:RegisterType("profile", addon.profiles:SyncHandler())
         self:RegisterEvent("GUILD_ROSTER_UPDATE", "OnGuildRosterUpdate")
         self.roster:Request()

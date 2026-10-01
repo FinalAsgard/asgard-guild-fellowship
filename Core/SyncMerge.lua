@@ -84,9 +84,13 @@ end
 -- currently resolves to that person in the receiver's view, so nobody can edit
 -- someone else's profile. Any peer may relay it, so profiles reach guildmates
 -- while their owner is offline: relayed data is trusted as accurate.
--- `personOf(charKey)` -> person id.
--- Returns true, or false and one of: malformed, not newer, not their character.
-function SyncMerge.Profile(personId, record, current, personOf)
+-- An officer clear ({ version, author, clear = { fields } }) is accepted instead
+-- when it is newer, names only clearable fields, carries no content, and its
+-- author is an addon officer.
+-- `personOf(charKey)` -> person id; `isOfficer(charKey)` -> boolean.
+-- Returns true, or false and one of: malformed, not newer, not their character,
+-- clear with content, not an officer.
+function SyncMerge.Profile(personId, record, current, personOf, isOfficer)
     if type(personId) ~= "string" or type(record) ~= "table" or type(record.version) ~= "number"
         or type(record.author) ~= "string" then
         return false, "malformed"
@@ -97,8 +101,29 @@ function SyncMerge.Profile(personId, record, current, personOf)
             return false, "malformed"
         end
     end
+    if record.clear ~= nil then
+        if type(record.clear) ~= "table" or #record.clear == 0 then
+            return false, "malformed"
+        end
+        for _, field in ipairs(record.clear) do
+            if not addon.Profiles.CLEARABLE[field] then
+                return false, "malformed"
+            end
+        end
+        for field in pairs(addon.Profiles.LIMITS) do
+            if record[field] ~= nil then
+                return false, "clear with content"
+            end
+        end
+    end
     if current and type(current.version) == "number" and record.version <= current.version then
         return false, "not newer"
+    end
+    if record.clear ~= nil then
+        if not isOfficer(record.author) then
+            return false, "not an officer"
+        end
+        return true
     end
     if personOf(record.author) ~= personId then
         return false, "not their character"

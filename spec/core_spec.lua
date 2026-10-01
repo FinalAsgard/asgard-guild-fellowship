@@ -76,7 +76,7 @@ describe("Core", function()
         it("prints usage for an unknown command", function()
             local ns, log = boot()
             ns.Core:HandleCommand("dance")
-            assert.are.equal(2, #log.addon.printed)
+            assert.are.equal(3, #log.addon.printed)
             assert.is_false(ns.Core.mainPanel:IsShown())
         end)
     end)
@@ -636,6 +636,76 @@ describe("Core", function()
             impostor.ns.Core.sync:SendRecords("profile", { "G-D" })
             deliver(impostor, victim)
             assert.is_nil(victim.ns.profiles:Get("G-D"))
+        end)
+    end)
+
+    describe("/fellowship clear", function()
+        local RANKS = { { name = "Guild Master", canEditOfficerNote = true }, { name = "Member" } }
+        local ROSTER = {
+            { name = "Leader", guid = "G-L", note = "", rankIndex = 0 },
+            { name = "Dresden Zelwindran", guid = "G-D", note = "", rankIndex = 1 },
+            { name = "Malgen Zelwindran", guid = "G-M", note = ">Dresden", rankIndex = 1 },
+        }
+
+        local function client(name)
+            local ns, log, harness = boot({
+                client = "Forever", guild = { name = "Asgard" }, roster = ROSTER, ranks = RANKS,
+                units = { player = { name = name, player = true } },
+            })
+            ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", false)
+            harness:advance(1)
+            return { name = name, ns = ns, log = log }
+        end
+
+        local function deliver(from, to)
+            local sent = from.log.addon.sent
+            from.log.addon.sent = {}
+            for _, message in ipairs(sent) do
+                to.ns.Core:OnCommReceived(message.prefix, message.message, message.distribution, from.name)
+            end
+        end
+
+        it("lets an officer clear someone's bio, and the clear reaches everyone", function()
+            local owner = client("Malgen Zelwindran")
+            local officer = client("Leader")
+            owner.ns.Core:SaveProfile({ aliasFallback = "Zel", bio = "rude words" })
+            deliver(owner, officer)
+            officer.ns.Core:HandleCommand("clear bio Zel")
+            assert.are.same({ "Cleared Dresden's bio." }, officer.log.addon.printed)
+            assert.is_nil(officer.ns.profiles:Get("G-D").bio)
+            deliver(officer, owner)
+            assert.is_nil(owner.ns.profiles:Get("G-D").bio)
+            assert.are.equal("Zel", owner.ns.profiles:Get("G-D").aliasFallback)
+        end)
+
+        it("clears an alias", function()
+            local owner = client("Malgen Zelwindran")
+            local officer = client("Leader")
+            owner.ns.Core:SaveProfile({ aliasFallback = "Zel" })
+            deliver(owner, officer)
+            officer.ns.Core:HandleCommand("clear alias Malgen")
+            assert.is_nil(officer.ns.profiles:Get("G-D").aliasFallback)
+            assert.are.equal("Dresden", officer.ns.identity:GetDisplayName("G-D"))
+        end)
+
+        it("refuses non-officers", function()
+            local member = client("Dresden Zelwindran")
+            member.ns.Core:SaveProfile({ bio = "mine" })
+            member.ns.Core:HandleCommand("clear bio Leader")
+            assert.are.same({ "Only addon officers can clear profiles." }, member.log.addon.printed)
+        end)
+
+        it("explains usage, unknown names, and empty profiles", function()
+            local officer = client("Leader")
+            officer.ns.Core:HandleCommand("clear")
+            officer.ns.Core:HandleCommand("clear discord Zel")
+            officer.ns.Core:HandleCommand("clear bio Nobody")
+            officer.ns.Core:HandleCommand("clear bio Malgen")
+            local printed = officer.log.addon.printed
+            assert.truthy(printed[1]:find("Usage", 1, true))
+            assert.truthy(printed[2]:find("Usage", 1, true))
+            assert.are.equal('No guildmate matches "Nobody".', printed[3])
+            assert.are.equal("Dresden has no bio to clear.", printed[4])
         end)
     end)
 end)
