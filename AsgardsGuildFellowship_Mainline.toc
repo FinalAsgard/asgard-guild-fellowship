@@ -23,6 +23,7 @@ Core\ChatTag.lua
 Core\TooltipFormatter.lua
 Core\Tooltip.lua
 Core\WhoFormatter.lua
+Core\IssuesView.lua
 Core\Protocol.lua
 Core\Sync.lua
 Core\UI.lua

@@ -21,7 +21,14 @@ local LAUNCHER_ICON = "Interface\\Icons\\Achievement_GuildPerk_EverybodysFriend"
 
 function Core:OnInitialize()
     self.db = LibStub("AceDB-3.0"):New("AsgardsGuildFellowshipDB", DB_DEFAULTS, true)
-    self.mainPanel = addon.UI.Window({ title = addon.Options.TITLE, width = 600, height = 450 })
+    self.mainPanel = addon.UI.Window({
+        title = addon.Options.TITLE,
+        width = 600,
+        height = 450,
+        render = function(window)
+            self:RenderMainPanel(window)
+        end,
+    })
     self.roster = addon.RosterAdapter.New(function(snapshot)
         if addon.identity then
             addon.identity:Update(snapshot)
@@ -196,6 +203,9 @@ function Core:UpdateGuild()
             return addon.guildSettings:IsAddonOfficer(charKey)
         end)
         self.sync:RegisterType("profile", addon.profiles:SyncHandler())
+        -- Keep the main panel current as identity and officer ranks change.
+        addon.identity.RegisterCallback(self, "IdentityChanged", "RefreshMainPanel")
+        addon.guildSettings.RegisterCallback(self, "GuildSettingsChanged", "RefreshMainPanel")
         self:RegisterEvent("GUILD_ROSTER_UPDATE", "OnGuildRosterUpdate")
         self.roster:Request()
     else
@@ -203,6 +213,41 @@ function Core:UpdateGuild()
         addon.guildSettings = nil
         addon.profiles = nil
         self:UnregisterEvent("GUILD_ROSTER_UPDATE")
+    end
+    self:RefreshMainPanel()
+end
+
+function Core:RefreshMainPanel()
+    self.mainPanel:Refresh()
+end
+
+-- The main panel. Addon officers get the Identity Issues view; everyone else
+-- gets a short note until member features land here.
+function Core:RenderMainPanel(window)
+    local store = addon.identity
+    if not store or not addon.guildSettings:IsAddonOfficer(self:PlayerKey()) then
+        window:AddText("Officer tools appear here for your guild's addon officers.")
+        return
+    end
+    local view = addon.IssuesView.Build(store:GetIssues(), function(charKey)
+        local info = store:GetCharacterInfo(charKey)
+        return info and info.name or charKey
+    end)
+    window:AddHeading(("Identity Issues (%d)"):format(view.count))
+    if view.empty then
+        window:AddText("No problems with your guild's notes. Every link resolves cleanly.")
+        return
+    end
+    local muted = { 0.7, 0.7, 0.7 }
+    for _, group in ipairs(view.groups) do
+        window:AddHeading(("%s (%d)"):format(group.title, #group.items))
+        window:AddText(group.explanation, muted)
+        for _, item in ipairs(group.items) do
+            window:AddText(item.ref and ("%s: %s"):format(item.names, item.ref) or item.names)
+            window:AddText(item.fix, muted)
+            -- The Note Helper arrives with #14; until then this is a placeholder.
+            window:AddButton("Open Note Helper", function() end, true)
+        end
     end
 end
 

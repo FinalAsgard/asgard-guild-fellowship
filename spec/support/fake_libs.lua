@@ -15,6 +15,15 @@ local function newAceGUI(log)
         function widget:SetHeight(height) self.height = height end
         function widget:SetLayout(layout) self.layout = layout end
         function widget:SetCallback(name, fn) self.callbacks[name] = fn end
+        function widget:SetText(text) self.text = text end
+        function widget:SetFullWidth(full) self.fullWidth = full end
+        function widget:SetColor(r, g, b) self.color = { r, g, b } end
+        function widget:SetDisabled(disabled) self.disabled = disabled end
+        function widget:AddChild(child)
+            self.children = self.children or {}
+            table.insert(self.children, child)
+        end
+        function widget:ReleaseChildren() self.children = {} end
         function widget:Hide()
             -- Like AceGUI's Frame, hiding fires OnClose.
             if self.callbacks.OnClose then

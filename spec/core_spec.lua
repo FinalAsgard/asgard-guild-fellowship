@@ -708,4 +708,72 @@ describe("Core", function()
             assert.are.equal("Dresden has no bio to clear.", printed[4])
         end)
     end)
+
+    describe("Identity Issues view", function()
+        local RANKS = { { name = "Guild Master", canEditOfficerNote = true }, { name = "Member" } }
+        local MESSY = {
+            { name = "Leader", guid = "G-L", note = "", rankIndex = 0 },
+            { name = "Dresden Zelwindran", guid = "G-D", note = "", rankIndex = 1 },
+            { name = "Dresden Other", guid = "G-O", note = "", rankIndex = 1 },
+            { name = "Malgen", guid = "G-M", note = ">Dresden", rankIndex = 1 },
+            { name = "Kira", guid = "G-K", note = ">Nobody", rankIndex = 1 },
+        }
+        local CLEAN = { MESSY[1], MESSY[2], { name = "Malgen", guid = "G-M", note = ">Dresden Zelwindran",
+            rankIndex = 1 } }
+
+        local function open(player, roster)
+            local ns, log, harness = boot({
+                client = "Forever", guild = { name = "Asgard" }, roster = roster, ranks = RANKS,
+                units = { player = { name = player, player = true } },
+            })
+            ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", false)
+            harness:advance(1)
+            ns.Core:HandleCommand("")
+            local function texts()
+                local scroll
+                for _, widget in ipairs(log.AceGUI.created) do
+                    if widget.kind == "ScrollFrame" then
+                        scroll = widget
+                    end
+                end
+                local result = {}
+                for _, child in ipairs(scroll.children) do
+                    table.insert(result, child.kind .. ":" .. tostring(child.text))
+                end
+                return result, scroll
+            end
+            return ns, texts, harness, log
+        end
+
+        it("lists issues grouped by type for an addon officer", function()
+            local _, texts = open("Leader", MESSY)
+            local lines, scroll = texts()
+            assert.are.equal("Heading:Identity Issues (2)", lines[1])
+            assert.are.equal("Heading:Ambiguous links (1)", lines[2])
+            assert.are.equal("Label:Malgen: >Dresden", lines[4])
+            assert.are.equal("Button:Open Note Helper", lines[6])
+            assert.is_true(scroll.children[6].disabled)
+            assert.are.equal("Heading:Unresolved links (1)", lines[7])
+            assert.are.equal("Label:Kira: >Nobody", lines[9])
+        end)
+
+        it("shows an empty state when the notes are clean", function()
+            local _, texts = open("Leader", CLEAN)
+            assert.are.same({ "Heading:Identity Issues (0)",
+                "Label:No problems with your guild's notes. Every link resolves cleanly." }, texts())
+        end)
+
+        it("hides the view from members", function()
+            local _, texts = open("Kira", MESSY)
+            assert.are.same({ "Label:Officer tools appear here for your guild's addon officers." }, texts())
+        end)
+
+        it("updates live when identity changes", function()
+            local ns, texts, harness, log = open("Leader", MESSY)
+            harness.options.roster = CLEAN
+            ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", false)
+            harness:advance(1)
+            assert.are.equal("Heading:Identity Issues (0)", texts()[1])
+        end)
+    end)
 end)
