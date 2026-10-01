@@ -45,7 +45,10 @@ function Tooltip.OnUnit(tooltip, unit)
     if not name or Compat.IsSecret(name) or Compat.IsSecret(realm) then
         return
     end
-    Tooltip.AddIdentity(tooltip, Compat.NormalizeName(name, realm))
+    -- Mark it so the Show post-hook doesn't add the section a second time.
+    if Tooltip.AddIdentity(tooltip, Compat.NormalizeName(name, realm)) then
+        added[tooltip] = true
+    end
 end
 
 -- Guild roster rows (community member list entries) build their tooltip in

@@ -168,7 +168,7 @@ function Sync:OnVersions(data, sender)
         end
     end
     for id, theirs in pairs(data.v) do
-        if type(theirs) == "number" and (mine[id] == nil or theirs > mine[id]) then
+        if type(id) == "string" and type(theirs) == "number" and (mine[id] == nil or theirs > mine[id]) then
             table.insert(want, id)
         end
     end

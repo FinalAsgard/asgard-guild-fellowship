@@ -359,6 +359,22 @@ describe("Core", function()
                 lefts(harness:hoverRosterRow({ name = "Dresden Zelwindran" })))
         end)
 
+        it("adds the section once when a unit tooltip is also a roster row", function()
+            local harness = bootWithRoster()
+            local tooltip = harness.tooltip
+            tooltip:SetOwner({
+                GetMemberInfo = function()
+                    return { name = "Malgen Zelwindran" }
+                end,
+            })
+            tooltip.unit = "mouseover"
+            for _, callback in ipairs(harness.unitTooltipPostCalls) do
+                callback(tooltip, {})
+            end
+            tooltip:Show()
+            assert.are.same({ "Zel", "Playing Malgen Zelwindran", "Main: Dresden Zelwindran" }, lefts(tooltip.lines))
+        end)
+
         it("leaves other tooltips alone", function()
             local harness = bootWithRoster()
             harness.tooltip:SetOwner({})

@@ -8,10 +8,11 @@ local _, addon = ...
 -- display name, tag, search key, or alias.
 --
 -- Addon officers can clear (never rewrite) a person's bio or alias. A clear is
--- its own update, synced as { version, author = officer, clear = { fields } }
--- with no content. Applied, it blanks those fields of the profile; the result
--- remembers `clearedBy`/`cleared` so it is passed on as the same clear. The
--- owner's next save replaces it as usual.
+-- its own update, { version, author = officer, clear = { fields } }, with no
+-- content. Applied, it blanks those fields of the profile and remembers
+-- `clearedBy`/`cleared`. It is passed on as the owner's record without the
+-- cleared fields, or as the bare clear when the owner isn't known. The owner's
+-- next save replaces it as usual.
 local Profiles = {}
 Profiles.__index = Profiles
 addon.Profiles = Profiles
@@ -142,10 +143,21 @@ function Profiles:SyncHandler()
         end,
         Get = function(personId)
             local profile = self.data.profiles[personId]
-            if profile and profile.clearedBy then
+            if not profile then
+                return nil
+            end
+            -- A cleared profile whose owner is known goes out as the owner's
+            -- record (minus the cleared fields), so a peer with no earlier copy
+            -- still gets the fields the officer didn't clear. Only a clear with
+            -- no known owner travels as the bare clear itself.
+            if profile.clearedBy and not profile.author then
                 return { version = profile.version, author = profile.clearedBy, clear = profile.cleared }
             end
-            return profile
+            local record = { version = profile.version, author = profile.author }
+            for _, field in ipairs(Profiles.FIELDS) do
+                record[field] = profile[field]
+            end
+            return record
         end,
         Receive = function(personId, record)
             local current = self.data.profiles[personId]

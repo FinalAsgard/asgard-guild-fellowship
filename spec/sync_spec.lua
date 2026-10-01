@@ -232,4 +232,22 @@ describe("Sync", function()
         assert.are.equal(Sync.Hash({ a = 1, b = 2 }), Sync.Hash({ b = 2, a = 1 }))
         assert.are_not.equal(Sync.Hash({ a = 1 }), Sync.Hash({ a = 2 }))
     end)
+
+    it("ignores non-string ids in a peer's versions without erroring", function()
+        local bus = newBus()
+        local client = newClient(bus, "A-Forever", ROSTER, { history = { EARLY_ROSTER } })
+        local peer = newClient(bus, "B-Forever", {})
+        peer.sync:Send("versions", { to = "A-Forever", t = "resolution", v = { [1] = 5, a = 5, b = "x" } }, "NORMAL")
+        assert.has_no.errors(function()
+            bus.flush()
+        end)
+        local wants
+        for _, entry in ipairs(bus.log) do
+            if entry.kind == "want" then
+                wants = entry.data.ids
+            end
+        end
+        assert.are.same({ "a" }, wants)
+        assert.are.equal("G-Dresden Zelwindran", client.store:GetPerson("Malgen-Forever").id)
+    end)
 end)
