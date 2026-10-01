@@ -99,6 +99,11 @@ function GreetComposer.Lines(names, templates, random, previous, defaults)
     end
     local index = GreetComposer.Pick(#templates, previous, random)
     local template = templates[index]
+    -- Safety net: if even one name makes the line too long, use a built-in
+    -- message for the whole batch rather than switch templates mid-greeting.
+    if names[1] and #GreetComposer.Fill(template, { names[1] }) > GreetComposer.MAX_LINE then
+        template = (defaults or GreetComposer.DEFAULT_RETURN)[1]
+    end
     local lines, batch = {}, {}
     for _, name in ipairs(names) do
         table.insert(batch, name)

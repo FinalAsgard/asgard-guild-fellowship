@@ -153,6 +153,15 @@ describe("GreetComposer", function()
         assert.is_true(#result[1] <= GreetComposer.MAX_LINE)
     end)
 
+    it("falls back to a built-in message when one name would overflow the chosen one", function()
+        local result = GreetComposer.Lines({ string.rep("N", 80), "Kira" }, { string.rep("x", 190) .. " {name}" },
+            function() return 1 end)
+        for _, line in ipairs(result) do
+            assert.is_true(#line <= GreetComposer.MAX_LINE)
+            assert.are.equal("Welcome back, ", line:sub(1, 14))
+        end
+    end)
+
     it("keeps % signs in names literal", function()
         assert.are.same({ "Hi 100%!" }, lines({ "100%" }, { "Hi {name}!" }))
     end)
