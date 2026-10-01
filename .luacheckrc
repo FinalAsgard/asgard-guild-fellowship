@@ -33,6 +33,8 @@ read_globals = {
     "PlaySound",
     "SendChatMessage",
     "SOUNDKIT",
+    "GetMaxLevelForPlayerExpansion",
+    "MAX_PLAYER_LEVEL",
     "TooltipDataProcessor",
     "UnitIsPlayer",
     "UnitName",

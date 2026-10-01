@@ -46,15 +46,11 @@ function Core:OnInitialize()
     })
     self.roster = addon.RosterAdapter.New(function(snapshot)
         if addon.identity then
-            -- A rank change doesn't fire IdentityChanged, so redraw the main
-            -- panel when it turns this player's officer tools on or off.
-            local playerKey = self:PlayerKey()
-            local wasOfficer = addon.guildSettings:IsAddonOfficer(playerKey)
             addon.identity:Update(snapshot)
             addon.availability:Prune()
-            if wasOfficer ~= addon.guildSettings:IsAddonOfficer(playerKey) then
-                self.mainPanel:Refresh()
-            end
+            -- Logins, levels, and zones feed Discovery, and a rank change can
+            -- turn officer tools on or off; neither fires IdentityChanged.
+            self.mainPanel:Refresh()
             self.greeter:OnSnapshot(snapshot)
             -- Sync starts once there is a roster to compare against.
             self.sync:Start()
@@ -420,6 +416,7 @@ function Core:UpdateGuild()
         -- Keep the main panel current as identity and officer ranks change.
         addon.identity.RegisterCallback(self, "IdentityChanged", "RefreshMainPanel")
         addon.guildSettings.RegisterCallback(self, "GuildSettingsChanged", "RefreshMainPanel")
+        addon.availability.RegisterCallback(self, "AvailabilityChanged", "RefreshMainPanel")
         self:RegisterEvent("GUILD_ROSTER_UPDATE", "OnGuildRosterUpdate")
         self.roster:Request()
     else
@@ -463,10 +460,11 @@ function Core:RefreshMainPanel()
     self.noteHelper:Refresh()
 end
 
--- The main panel: the Note Helper for everyone, plus the Identity Issues view
--- for addon officers.
+-- The main panel: Discovery and the Note Helper for everyone, plus the
+-- Identity Issues view for addon officers.
 function Core:RenderMainPanel(window)
     local store = addon.identity
+    self:RenderDiscovery(window)
     window:AddButton("Open Note Helper", function()
         self:OpenNoteHelper()
     end, store == nil)
@@ -493,6 +491,32 @@ function Core:RenderMainPanel(window)
             window:AddButton("Fix in Note Helper", function()
                 self:OpenNoteHelper(Core.NoteHelperPrefill(group.type, item.characters))
             end)
+        end
+    end
+end
+
+-- Discovery: online guildmates to play with, with their characters near this
+-- character's level.
+function Core:RenderDiscovery(window)
+    local store = addon.identity
+    local playerKey = self:PlayerKey()
+    local person = store and store:GetPerson(playerKey)
+    local info = store and store:GetCharacterInfo(playerKey)
+    if not person or not info then
+        window:AddHeading("Discovery")
+        window:AddText("Discovery shows who you could play with once you're in a guild and the roster has loaded.")
+        return
+    end
+    local people = addon.Discovery.Build(store, addon.availability, { personId = person.id, level = info.level },
+        { maxLevel = addon.Compat.MaxLevel() })
+    window:AddHeading(("Discovery (%d)"):format(#people))
+    if #people == 0 then
+        window:AddText("Nobody else is online who's free to play right now.")
+        return
+    end
+    for _, entry in ipairs(people) do
+        for index, line in ipairs(addon.Discovery.Lines(entry)) do
+            window:AddText(line, index > 1 and { 0.7, 0.7, 0.7 } or nil)
         end
     end
 end

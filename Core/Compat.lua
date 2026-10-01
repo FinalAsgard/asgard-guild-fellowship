@@ -209,3 +209,15 @@ function Compat.JoinedGuildName(message)
     end
     return message:match(pattern)
 end
+
+-- The level cap that Discovery's "only other capped characters" rule applies
+-- at, or nil. Retail only: on Forever the level range applies at every level.
+function Compat.MaxLevel()
+    if Compat.IsForever() then
+        return nil
+    end
+    if GetMaxLevelForPlayerExpansion then
+        return GetMaxLevelForPlayerExpansion()
+    end
+    return MAX_PLAYER_LEVEL
+end

@@ -260,6 +260,14 @@ describe("Compat", function()
             end)
         end)
 
+        it("reports the level cap on Retail only", function()
+            assert.are.equal(80, loadCompat({ client = "Retail",
+                globals = { GetMaxLevelForPlayerExpansion = function() return 80 end } }).MaxLevel())
+            assert.are.equal(70, loadCompat({ client = "Retail", globals = { MAX_PLAYER_LEVEL = 70 } }).MaxLevel())
+            assert.is_nil(loadCompat({ client = "Forever",
+                globals = { GetMaxLevelForPlayerExpansion = function() return 60 end } }).MaxLevel())
+        end)
+
         it("reads the name from a has-joined-the-guild message", function()
             local Compat = loadCompat({ globals = { ERR_GUILD_JOIN_S = "%s has joined the guild." } })
             assert.are.equal("Mike Newman", Compat.JoinedGuildName("Mike Newman has joined the guild."))

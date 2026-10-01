@@ -659,9 +659,10 @@ describe("Core", function()
 
     describe("availability", function()
         local ROSTER = {
-            { name = "Dresden Zelwindran", guid = "G-D", note = "", online = false },
-            { name = "Malgen Zelwindran", guid = "G-M", note = ">Dresden", online = true },
-            { name = "Kira", guid = "G-K", note = "", online = true },
+            { name = "Dresden Zelwindran", guid = "G-D", note = "", online = false, level = 60, className = "Mage" },
+            { name = "Malgen Zelwindran", guid = "G-M", note = ">Dresden", online = true, level = 30,
+                className = "Warrior", zone = "Duskwood" },
+            { name = "Kira", guid = "G-K", note = "", online = true, level = 31, className = "Priest" },
         }
 
         local function client(name)
@@ -748,6 +749,65 @@ describe("Core", function()
                 friend.harness:advance(1)
             end
             assert.are.equal("anything", friend.ns.availability:Get("G-D"))
+        end)
+
+        local function panel(c)
+            local scroll
+            for _, widget in ipairs(c.log.AceGUI.created) do
+                if widget.kind == "ScrollFrame" then
+                    scroll = widget
+                end
+            end
+            local result = {}
+            for _, child in ipairs(scroll.children) do
+                if child.text == "Open Note Helper" then
+                    break
+                end
+                table.insert(result, child.kind .. ":" .. tostring(child.text))
+            end
+            return result
+        end
+
+        it("lists guildmates in the main panel's Discovery section, live as statuses arrive", function()
+            local alt = client("Malgen Zelwindran")
+            local friend = client("Kira")
+            friend.ns.Core:HandleCommand("")
+            assert.are.same({
+                "Heading:Discovery (1)",
+                "Label:Dresden — Malgen Zelwindran, Warrior 30 · Duskwood",
+                "Label:    At your level: Malgen Zelwindran, Warrior 30",
+            }, panel(friend))
+            alt.ns.Core:HandleCommand("status dungeons")
+            deliver(alt, friend)
+            assert.are.equal("Label:Dresden — Malgen Zelwindran, Warrior 30 · Up for Dungeons · Duskwood",
+                panel(friend)[2])
+        end)
+
+        it("updates Discovery when the roster changes and hides people set to Busy", function()
+            local alt = client("Malgen Zelwindran")
+            local friend = client("Kira")
+            friend.ns.Core:HandleCommand("")
+            alt.ns.Core:HandleCommand("status busy")
+            deliver(alt, friend)
+            assert.are.same({ "Heading:Discovery (0)", "Label:Nobody else is online who's free to play right now." },
+                panel(friend))
+            alt.harness:advance(1)
+            alt.ns.Core:HandleCommand("status clear")
+            deliver(alt, friend)
+            friend.harness.options.roster = { ROSTER[1], { name = "Malgen Zelwindran", guid = "G-M",
+                note = ">Dresden", online = false, level = 30, className = "Warrior" }, ROSTER[3] }
+            friend.ns.Core[friend.log.addon.events.GUILD_ROSTER_UPDATE](friend.ns.Core, "GUILD_ROSTER_UPDATE", false)
+            friend.harness:advance(1)
+            assert.are.equal("Heading:Discovery (0)", panel(friend)[1])
+        end)
+
+        it("explains Discovery outside a guild", function()
+            local ns, log = boot({ units = { player = { name = "Nobody", player = true } } })
+            ns.Core:HandleCommand("")
+            local c = { log = log }
+            assert.are.same({ "Heading:Discovery",
+                "Label:Discovery shows who you could play with once you're in a guild and the roster has loaded." },
+                panel(c))
         end)
 
         it("ends a status when the person logs off", function()
@@ -868,11 +928,15 @@ describe("Core", function()
                         scroll = widget
                     end
                 end
-                local result = {}
+                -- From the Note Helper button on: the Discovery section above has its own tests.
+                local result, children = {}, {}
                 for _, child in ipairs(scroll.children) do
-                    table.insert(result, child.kind .. ":" .. tostring(child.text))
+                    if #children > 0 or child.text == "Open Note Helper" then
+                        table.insert(children, child)
+                        table.insert(result, child.kind .. ":" .. tostring(child.text))
+                    end
                 end
-                return result, scroll
+                return result, { children = children }
             end
             return ns, texts, harness, log
         end
