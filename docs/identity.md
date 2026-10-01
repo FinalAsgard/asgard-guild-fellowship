@@ -48,6 +48,8 @@ Slash commands: `/fellowship` and `/agf` always work. `/gf` works too unless ano
 | `/gf clear <bio\|alias> <name>` | Addon officers: clears someone's bio or profile alias |
 | `/gf version` | Prints the add-on version |
 
+Greeting guildmates who log in or join is covered in [Guild Greet](guild-greet.md).
+
 ## Your profile
 
 In **Settings → Asgard's Guild Fellowship → My profile** you can set:

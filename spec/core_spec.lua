@@ -930,4 +930,506 @@ describe("Core", function()
             assert.are.same({}, harness.notesWritten)
         end)
     end)
+
+    describe("Guild Greet", function()
+        local function roster()
+            return {
+                { name = "Me", guid = "G-ME", note = "", online = true },
+                { name = "Dresden Zelwindran", guid = "G-D", note = "@Zel", online = false },
+                { name = "Malgen", guid = "G-M", note = ">Dresden", online = false },
+                { name = "Kira", guid = "G-K", note = "", online = false },
+                { name = "Mine Alt", guid = "G-A", note = ">Me", online = false },
+            }
+        end
+
+        local function start(enabled, initiallyOnline)
+            local initial = roster()
+            for _, index in ipairs(initiallyOnline or {}) do
+                initial[index].online = true
+            end
+            local ns, log, harness = boot({
+                client = "Forever", guild = { name = "Asgard" }, roster = initial,
+                units = { player = { name = "Me", player = true } },
+            })
+            if enabled then
+                log.options.registered.table.args.features.args.greet.set(nil, true)
+            end
+            local function update()
+                ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", false)
+                harness:advance(1)
+            end
+            update()
+            local function online(index, value)
+                harness.options.roster[index].online = value
+                update()
+            end
+            -- The greet prompt's text and buttons, or nil when it isn't shown.
+            local function prompt()
+                local window
+                for _, widget in ipairs(log.AceGUI.created) do
+                    if widget.kind == "Window" and widget.shown ~= false and widget.children then
+                        window = widget
+                    end
+                end
+                if not window or not ns.Core.greeter.prompt:IsShown() then
+                    return nil
+                end
+                local result = { buttons = {} }
+                for _, child in ipairs(window.children) do
+                    if child.kind == "Label" then
+                        result.text = child.text
+                    else
+                        result.buttons[child.text] = child
+                    end
+                end
+                return result
+            end
+            return ns, harness, online, prompt, log.options.registered.table.args.features.args.greet, log
+        end
+
+        it("is off by default and shows nothing", function()
+            local _, harness, online, prompt = start(false)
+            online(4, true)
+            assert.is_nil(prompt())
+            assert.are.same({}, harness.chatSent)
+        end)
+
+        it("offers a prompt when a guildmate comes online and greets only on click", function()
+            local _, harness, online, prompt = start(true)
+            online(4, true)
+            local shown = prompt()
+            assert.are.equal("Kira came online.", shown.text)
+            assert.are.same({}, harness.chatSent)
+            shown.buttons.Greet.callbacks.OnClick()
+            assert.are.equal(1, #harness.chatSent)
+            assert.are.equal("GUILD", harness.chatSent[1].channel)
+            assert.truthy(harness.chatSent[1].text:find("Kira", 1, true))
+            assert.is_nil(prompt())
+        end)
+
+        it("greets the person by their display name", function()
+            local _, harness, online, prompt = start(true)
+            online(3, true)
+            assert.are.equal("Zel came online.", prompt().text)
+            prompt().buttons.Greet.callbacks.OnClick()
+            assert.truthy(harness.chatSent[1].text:find("Zel", 1, true))
+        end)
+
+        it("doesn't prompt for an alt switch, a quick relog, or the player's own alts", function()
+            local _, _, online, prompt = start(true)
+            online(2, true)
+            prompt().buttons.Dismiss.callbacks.OnClick()
+            online(2, false)
+            online(3, true)
+            assert.is_nil(prompt())
+            online(3, false)
+            online(3, true)
+            assert.is_nil(prompt())
+            online(5, true)
+            assert.is_nil(prompt())
+        end)
+
+        it("doesn't prompt for anyone already online at login", function()
+            local _, _, online, prompt = start(true, { 2, 4 })
+            assert.is_nil(prompt())
+            online(4, true)
+            assert.is_nil(prompt())
+        end)
+
+        it("sends nothing when dismissed or closed", function()
+            local ns, harness, online, prompt = start(true)
+            online(4, true)
+            prompt().buttons.Dismiss.callbacks.OnClick()
+            assert.is_nil(prompt())
+            online(2, true)
+            ns.Core.greeter.prompt.frame.callbacks.OnClose(ns.Core.greeter.prompt.frame)
+            assert.is_nil(prompt())
+            assert.are.same({}, harness.chatSent)
+        end)
+
+        it("clears the prompt and starts a new baseline when turned off and on", function()
+            local _, harness, online, prompt, toggle = start(true)
+            online(4, true)
+            toggle.set(nil, false)
+            assert.is_false(toggle.get())
+            assert.is_nil(prompt())
+            online(2, true)
+            assert.is_nil(prompt())
+            toggle.set(nil, true)
+            online(4, false)
+            assert.is_nil(prompt())
+            assert.are.same({}, harness.chatSent)
+            harness:advance(1800)
+            online(4, true)
+            assert.are.equal("Kira came online.", prompt().text)
+        end)
+
+        it("ignores system messages the client hides from add-ons", function()
+            local ns, harness = start(true)
+            harness:advance(30)
+            harness.env.issecretvalue = function(value)
+                return type(value) == "string" and value:find("secret", 1, true) ~= nil
+            end
+            local before = harness.rosterRequests
+            assert.has_no.errors(function()
+                ns.Core:OnSystemMessage("CHAT_MSG_SYSTEM", "secret has joined the guild.")
+                ns.Core:OnSystemMessage("CHAT_MSG_SYSTEM", nil)
+            end)
+            assert.are.equal(before, harness.rosterRequests)
+            assert.is_false(ns.Core.greeter.prompt:IsShown())
+        end)
+
+        it("rejects over-long messages in settings", function()
+            local _, _, _, _, _, log = start(true)
+            local messages = log.options.registered.table.args.features.args.greetMessages
+            assert.is_true(messages.validate(nil, "Hi {name}!\nHey {name}!"))
+            assert.is_string(messages.validate(nil, "Hi {name}!\n" .. string.rep("x", 201)))
+            assert.are.equal("Use {name} at most once per message.", messages.validate(nil, "{name} and {name}"))
+        end)
+
+        it("asks for the roster when the game announces someone came online", function()
+            local ns, harness = start(true)
+            harness:advance(30)
+            local before = harness.rosterRequests
+            ns.Core:OnSystemMessage("CHAT_MSG_SYSTEM", "|Hplayer:Kira|h[Kira]|h has come online.")
+            assert.are.equal(before + 1, harness.rosterRequests)
+            ns.Core:OnSystemMessage("CHAT_MSG_SYSTEM", "You are now AFK.")
+            assert.are.equal(before + 1, harness.rosterRequests)
+        end)
+
+        describe("new members", function()
+            -- Every row of the open prompt as "text" or "[button]".
+            local function rows(ns)
+                if not ns.Core.greeter.prompt:IsShown() then
+                    return nil
+                end
+                local result = {}
+                for _, child in ipairs(ns.Core.greeter.prompt.frame.children) do
+                    table.insert(result, child.kind == "Label" and child.text or ("[" .. child.text .. "]"))
+                end
+                return result
+            end
+
+            local function button(ns, text)
+                for _, child in ipairs(ns.Core.greeter.prompt.frame.children) do
+                    if child.text == text then
+                        return child
+                    end
+                end
+            end
+
+            local function join(ns, harness, name)
+                ns.Core:OnSystemMessage("CHAT_MSG_SYSTEM", name .. " has joined the guild.")
+                table.insert(harness.options.roster, { name = name, guid = "G-" .. name, note = "", online = true })
+            end
+
+            it("offers a Welcome when someone joins and posts one new-member line on click", function()
+                local ns, harness = start(true)
+                join(ns, harness, "Mike Newman")
+                assert.are.same({ "Mike Newman joined the guild.", "[Welcome]", "[Dismiss]" }, rows(ns))
+                button(ns, "Welcome").callbacks.OnClick()
+                assert.are.equal(1, #harness.chatSent)
+                local text = harness.chatSent[1].text
+                local matched = false
+                for _, template in ipairs(ns.GreetComposer.DEFAULT_NEW) do
+                    matched = matched or text == template:gsub("{name}", "Mike Newman")
+                end
+                assert.is_true(matched, text)
+                assert.is_nil(rows(ns))
+            end)
+
+            it("doesn't also offer the new member as a return when they show up online", function()
+                local ns, harness, _, _, _, log = start(true)
+                join(ns, harness, "Mike Newman")
+                button(ns, "Dismiss").callbacks.OnClick()
+                ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", false)
+                harness:advance(1)
+                assert.is_nil(rows(ns))
+            end)
+
+            it("welcomes each new member once", function()
+                local ns, harness = start(true)
+                join(ns, harness, "Mike Newman")
+                ns.Core:OnSystemMessage("CHAT_MSG_SYSTEM", "Mike Newman has joined the guild.")
+                assert.are.same({ "Mike Newman joined the guild.", "[Welcome]", "[Dismiss]" }, rows(ns))
+            end)
+
+            it("keeps welcome-backs and welcomes in separate rows and lines", function()
+                local ns, harness, online = start(true)
+                online(4, true)
+                join(ns, harness, "Mike Newman")
+                assert.are.same({ "Kira came online.", "[Greet]", "Mike Newman joined the guild.", "[Welcome]",
+                    "[Dismiss]" }, rows(ns))
+                button(ns, "Greet").callbacks.OnClick()
+                assert.are.same({ "Mike Newman joined the guild.", "[Welcome]", "[Dismiss]" }, rows(ns))
+                assert.is_nil(harness.chatSent[1].text:find("Mike", 1, true))
+                button(ns, "Welcome").callbacks.OnClick()
+                assert.are.equal(2, #harness.chatSent)
+                assert.is_nil(harness.chatSent[2].text:find("Kira", 1, true))
+            end)
+
+            it("uses the player's own new-member messages", function()
+                local ns, harness, _, _, _, log = start(true)
+                log.options.registered.table.args.features.args.newMessages.set(nil, "Glad you're here, {name}!")
+                join(ns, harness, "Mike Newman")
+                button(ns, "Welcome").callbacks.OnClick()
+                assert.are.equal("Glad you're here, Mike Newman!", harness.chatSent[1].text)
+            end)
+
+            it("respects the Welcome new members toggle and Guild Greet being off", function()
+                local ns, harness, _, _, toggle, log = start(true)
+                local welcomeNew = log.options.registered.table.args.features.args.welcomeNew
+                assert.is_true(welcomeNew.get())
+                welcomeNew.set(nil, false)
+                join(ns, harness, "Mike Newman")
+                assert.is_nil(rows(ns))
+                welcomeNew.set(nil, true)
+                toggle.set(nil, false)
+                join(ns, harness, "Ann Other")
+                assert.is_nil(rows(ns))
+            end)
+
+            it("drops a new member other players already welcomed twice", function()
+                local ns, harness = start(true)
+                join(ns, harness, "Mike Newman")
+                ns.Core.greeter:OnClaim({ "Mike Newman-Forever" }, "Anna-Forever")
+                ns.Core.greeter:OnClaim({ "Mike Newman-Forever" }, "Bert-Forever")
+                assert.is_nil(rows(ns))
+            end)
+        end)
+
+        describe("prompt behavior", function()
+            it("collects arrivals into one prompt and greets them in one line", function()
+                local _, harness, online, prompt = start(true)
+                online(2, true)
+                online(4, true)
+                assert.are.equal("Zel and Kira came online.", prompt().text)
+                prompt().buttons.Greet.callbacks.OnClick()
+                assert.are.equal(1, #harness.chatSent)
+                assert.truthy(harness.chatSent[1].text:find("Zel and Kira", 1, true))
+            end)
+
+            it("hides an unanswered prompt after the timeout, restarting it for new arrivals", function()
+                local ns, harness, online, prompt = start(true)
+                local timeout = ns.Greeter.PROMPT_TIMEOUT
+                online(4, true)
+                harness:advance(timeout - 10)
+                online(2, true)
+                harness:advance(20)
+                assert.are.equal("Kira and Zel came online.", prompt().text)
+                harness:advance(timeout)
+                assert.is_nil(prompt())
+                assert.are.same({}, harness.chatSent)
+            end)
+
+            it("waits until combat ends to show the prompt", function()
+                local ns, harness, online, prompt = start(true)
+                harness.options.inCombat = true
+                online(4, true)
+                assert.is_nil(prompt())
+                harness.options.inCombat = false
+                ns.Core:OnCombatEnded()
+                assert.are.equal("Kira came online.", prompt().text)
+            end)
+
+            it("drops arrivals that expired during combat", function()
+                local ns, harness, online, prompt = start(true)
+                harness.options.inCombat = true
+                online(4, true)
+                harness:advance(ns.Greeter.PROMPT_TIMEOUT)
+                harness.options.inCombat = false
+                ns.Core:OnCombatEnded()
+                assert.is_nil(prompt())
+            end)
+
+            it("uses the player's own messages without repeating one back to back", function()
+                local _, harness, online, prompt, _, log = start(true)
+                local messages = log.options.registered.table.args.features.args.greetMessages
+                assert.truthy(messages.get():find("Welcome back, {name}!", 1, true))
+                messages.set(nil, "Hi {name}!\n\n  Hey {name}!  \n")
+                assert.are.equal("Hi {name}!\nHey {name}!", messages.get())
+                local sent = {}
+                for _, index in ipairs({ 4, 2, 4 }) do
+                    harness:advance(1800)
+                    online(index, true)
+                    prompt().buttons.Greet.callbacks.OnClick()
+                    online(index, false)
+                    table.insert(sent, harness.chatSent[#harness.chatSent].text)
+                end
+                for i, text in ipairs(sent) do
+                    assert.truthy(text:match("^H[ie]y? "), text)
+                    if i > 1 then
+                        assert.are_not.equal(sent[i - 1]:match("^(%a+)"), text:match("^(%a+)"))
+                    end
+                end
+                messages.set(nil, "   ")
+                assert.truthy(messages.get():find("Welcome back, {name}!", 1, true))
+            end)
+
+            it("plays a short sound when the prompt opens, not on every update", function()
+                local _, harness, online, prompt = start(true)
+                online(4, true)
+                assert.are.same({ 3081 }, harness.soundsPlayed)
+                online(2, true)
+                assert.are.equal(1, #harness.soundsPlayed)
+                prompt().buttons.Dismiss.callbacks.OnClick()
+                online(4, false)
+                harness:advance(1800)
+                online(4, true)
+                assert.are.equal(2, #harness.soundsPlayed)
+            end)
+
+            it("plays no sound while combat holds the prompt back", function()
+                local _, harness, online = start(true)
+                harness.options.inCombat = true
+                online(4, true)
+                assert.are.same({}, harness.soundsPlayed)
+            end)
+
+            it("remembers where the prompt was dragged", function()
+                local ns, _, online, prompt = start(true)
+                online(4, true)
+                assert.is_table(prompt())
+                local frame = ns.Core.greeter.prompt.frame
+                assert.are.equal(ns.Core.db.profile.greet.prompt, frame.status)
+            end)
+        end)
+    end)
+
+    describe("Guild Greet across add-on users", function()
+        local function roster()
+            return {
+                { name = "Anna", guid = "G-A", note = "", online = true },
+                { name = "Bert", guid = "G-B", note = "", online = true },
+                { name = "Cara", guid = "G-C", note = "", online = true },
+                { name = "Dresden Zelwindran", guid = "G-D", note = "@Zel", online = false },
+                { name = "Malgen", guid = "G-M", note = ">Dresden", online = false },
+                { name = "Kira", guid = "G-K", note = "", online = false },
+            }
+        end
+
+        local function client(name)
+            local ns, log, harness = boot({
+                client = "Forever", guild = { name = "Asgard" }, roster = roster(),
+                units = { player = { name = name, player = true } },
+            })
+            local features = log.options.registered.table.args.features.args
+            features.greet.set(nil, true)
+            local c = { name = name, ns = ns, log = log, harness = harness, features = features }
+            function c.update()
+                ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", false)
+                harness:advance(1)
+            end
+            function c.online(index)
+                harness.options.roster[index].online = true
+                c.update()
+            end
+            function c.prompt()
+                if not ns.Core.greeter.prompt:IsShown() then
+                    return nil
+                end
+                local frame = ns.Core.greeter.prompt.frame
+                local result = { buttons = {} }
+                for _, child in ipairs(frame.children) do
+                    if child.kind == "Label" then
+                        result.text = child.text
+                    else
+                        result.buttons[child.text] = child
+                    end
+                end
+                return result
+            end
+            c.update()
+            return c
+        end
+
+        -- Delivers each client's add-on messages to every other client.
+        local function relay(clients)
+            for _, from in ipairs(clients) do
+                local sent = from.log.addon.sent
+                from.log.addon.sent = {}
+                for _, message in ipairs(sent) do
+                    for _, to in ipairs(clients) do
+                        if to ~= from then
+                            to.ns.Core:OnCommReceived(message.prefix, message.message, message.distribution, from.name)
+                        end
+                    end
+                end
+            end
+        end
+
+        local function three()
+            local clients = { client("Anna"), client("Bert"), client("Cara") }
+            for _, c in ipairs(clients) do
+                c.online(6)
+            end
+            relay(clients)
+            return clients[1], clients[2], clients[3]
+        end
+
+        it("lets two players greet an arrival, then removes them from everyone else's prompt", function()
+            local anna, bert, cara = three()
+            assert.are.equal("Kira came online.", cara.prompt().text)
+            anna.prompt().buttons.Greet.callbacks.OnClick()
+            relay({ anna, bert, cara })
+            assert.are.equal("Kira came online.", bert.prompt().text)
+            assert.are.equal("Kira came online.", cara.prompt().text)
+            bert.prompt().buttons.Greet.callbacks.OnClick()
+            relay({ anna, bert, cara })
+            assert.is_nil(cara.prompt())
+            assert.are.equal(1, #anna.harness.chatSent)
+            assert.are.equal(1, #bert.harness.chatSent)
+            assert.are.equal(0, #cara.harness.chatSent)
+        end)
+
+        it("doesn't offer someone who already has two greetings when they reach a slower client", function()
+            local anna, bert = client("Anna"), client("Bert")
+            local cara = client("Cara")
+            anna.online(6)
+            bert.online(6)
+            anna.prompt().buttons.Greet.callbacks.OnClick()
+            bert.prompt().buttons.Greet.callbacks.OnClick()
+            relay({ anna, bert, cara })
+            cara.online(6)
+            assert.is_nil(cara.prompt())
+        end)
+
+        it("only removes the people a greeting covered, and matches them by person", function()
+            local _, _, cara = three()
+            cara.online(5)
+            assert.are.equal("Kira and Zel came online.", cara.prompt().text)
+            cara.ns.Core.greeter:OnClaim({ "G-D" }, "Anna-Forever")
+            cara.ns.Core.greeter:OnClaim({ "G-D" }, "Bert-Forever")
+            assert.are.equal("Kira came online.", cara.prompt().text)
+        end)
+
+        it("counts each greeter once", function()
+            local _, _, cara = three()
+            cara.ns.Core.greeter:OnClaim({ "G-K" }, "Anna-Forever")
+            cara.ns.Core.greeter:OnClaim({ "G-K" }, "Anna-Forever")
+            assert.are.equal("Kira came online.", cara.prompt().text)
+        end)
+
+        it("ignores other players' greetings when sync is off", function()
+            local anna, bert, cara = three()
+            cara.features.sync.set(nil, false)
+            anna.prompt().buttons.Greet.callbacks.OnClick()
+            bert.prompt().buttons.Greet.callbacks.OnClick()
+            relay({ anna, bert, cara })
+            assert.are.equal("Kira came online.", cara.prompt().text)
+        end)
+
+        it("ignores malformed announcements", function()
+            local _, _, cara = three()
+            local greeter = cara.ns.Core.greeter
+            for _, sender in ipairs({ "Anna-Forever", "Bert-Forever" }) do
+                greeter:OnClaim(nil, sender)
+                greeter:OnClaim("G-K", sender)
+                greeter:OnClaim({ 5, {} }, sender)
+            end
+            greeter:OnClaim({ "G-K" }, nil)
+            greeter:OnClaim({ "G-K" }, 42)
+            assert.are.equal("Kira came online.", cara.prompt().text)
+        end)
+    end)
 end)

@@ -8,8 +8,9 @@ local Protocol = {}
 addon.Protocol = Protocol
 
 Protocol.VERSION = 1
--- Message kinds this version understands; others are ignored.
-Protocol.KINDS = { digest = true, versions = true, want = true, records = true }
+-- Message kinds this version understands; others are ignored. Besides the
+-- record exchange, `greet` announces that a player greeted someone (Guild Greet).
+Protocol.KINDS = { digest = true, versions = true, want = true, records = true, greet = true }
 -- Target size of one records message before compression, in bytes. Larger
 -- record sets are split into several self-contained messages.
 Protocol.BATCH_BYTES = 2000

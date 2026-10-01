@@ -16,6 +16,7 @@ Harness.__index = Harness
 --   roster     guild members: { name, guid, rankIndex, level, class, className, zone, note, online }
 --              (name as GetGuildRosterInfo reports it, with or without realm)
 --   canEditPublicNote  whether CanEditPublicNote() is true
+--   inCombat   whether InCombatLockdown() is true
 --   ranks      guild ranks in order (guild master first): { name, canEditOfficerNote }
 --   units      unit tokens the client knows: { mouseover = { name = ..., realm = ..., player = true } }
 --   globals    extra globals, e.g. another add-on's SLASH_ entries or a fake LibStub
@@ -32,6 +33,8 @@ function Harness.new(options)
         timers = {},
         rosterRequests = 0,
         notesWritten = {},
+        chatSent = {},
+        soundsPlayed = {},
         chatFilters = {},
         unitTooltipPostCalls = {},
     }, Harness)
@@ -89,6 +92,18 @@ function Harness.new(options)
                 return rank and { [12] = rank.canEditOfficerNote == true }
             end,
         },
+        ERR_FRIEND_ONLINE_SS = "|Hplayer:%s|h[%s]|h has come online.",
+        ERR_GUILD_JOIN_S = "%s has joined the guild.",
+        SOUNDKIT = { TELL_MESSAGE = 3081 },
+        PlaySound = function(kit)
+            table.insert(self.soundsPlayed, kit)
+        end,
+        InCombatLockdown = function()
+            return options.inCombat == true
+        end,
+        SendChatMessage = function(text, channel)
+            table.insert(self.chatSent, { text = text, channel = channel })
+        end,
         CanEditPublicNote = function()
             return options.canEditPublicNote == true
         end,

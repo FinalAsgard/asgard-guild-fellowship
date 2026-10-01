@@ -244,6 +244,44 @@ local function myProfileGroup(guild)
     return { type = "group", name = "My profile", inline = true, order = 2, args = args }
 end
 
+-- An editable list of greeting messages stored at profile().greet[field],
+-- shown with `defaults` while the player hasn't written their own.
+local function messageList(profile, field, name, order, defaults)
+    return {
+        type = "input",
+        name = name,
+        desc = "One per line. {name} becomes the people being greeted; a line without {name} "
+            .. "gets the names at the end. One is picked at random, never the same twice in a row.",
+        multiline = 5,
+        width = "full",
+        order = order,
+        get = function()
+            local messages = profile().greet[field]
+            if not messages or #messages == 0 then
+                messages = defaults
+            end
+            return table.concat(messages, "\n")
+        end,
+        validate = function(_, value)
+            for line in (value or ""):gmatch("[^\r\n]+") do
+                local problem = addon.GreetComposer.Problem(line)
+                if problem then
+                    return problem
+                end
+            end
+            return true
+        end,
+        set = function(_, value)
+            local lines = {}
+            for line in (value or ""):gmatch("[^\r\n]+") do
+                table.insert(lines, line)
+            end
+            local messages = addon.GreetComposer.Clean(lines)
+            profile().greet[field] = #messages > 0 and messages or nil
+        end,
+    }
+end
+
 -- `profile` returns the current AceDB profile; `guild` is described above
 -- guildSettingsGroup and myProfileGroup.
 function Options.Build(profile, guild)
@@ -260,6 +298,39 @@ function Options.Build(profile, guild)
                     chatTag = chatTagGroup(function()
                         return profile().chatTag
                     end),
+                    greet = {
+                        type = "toggle",
+                        name = "Guild Greet",
+                        desc = "When guildmates come online, show a prompt to greet them in guild chat. "
+                            .. "Nothing is posted unless you click Greet. With sync on, at most two players "
+                            .. "greet each arrival; with sync off, your prompt ignores what others did.",
+                        width = "full",
+                        order = 3,
+                        get = function()
+                            return profile().greet.enabled
+                        end,
+                        set = function(_, value)
+                            profile().greet.enabled = value
+                            guild.GreetToggled()
+                        end,
+                    },
+                    greetMessages = messageList(profile, "messages", "Welcome-back messages", 4,
+                        addon.GreetComposer.DEFAULT_RETURN),
+                    welcomeNew = {
+                        type = "toggle",
+                        name = "Welcome new members",
+                        desc = "Offer a Welcome button when someone joins the guild (needs Guild Greet on).",
+                        width = "full",
+                        order = 5,
+                        get = function()
+                            return profile().greet.welcomeNew ~= false
+                        end,
+                        set = function(_, value)
+                            profile().greet.welcomeNew = value
+                        end,
+                    },
+                    newMessages = messageList(profile, "newMessages", "New-member messages", 6,
+                        addon.GreetComposer.DEFAULT_NEW),
                     sync = {
                         type = "toggle",
                         name = "Sync with other add-on users",

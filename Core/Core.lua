@@ -15,6 +15,10 @@ local DB_DEFAULTS = {
         minimap = {},
         chatTag = addon.ChatTag.DEFAULTS,
         sync = { enabled = true },
+        -- messages: the player's welcome-back lines (nil: built-in defaults);
+        -- prompt: where the greet prompt was last dragged.
+        -- newMessages: the player's new-member welcomes (nil: built-in defaults).
+        greet = { enabled = false, welcomeNew = true, prompt = {} },
     },
 }
 local LAUNCHER_ICON = "Interface\\Icons\\Achievement_GuildPerk_EverybodysFriend"
@@ -48,6 +52,7 @@ function Core:OnInitialize()
             if wasOfficer ~= addon.guildSettings:IsAddonOfficer(playerKey) then
                 self.mainPanel:Refresh()
             end
+            self.greeter:OnSnapshot(snapshot)
             -- Sync starts once there is a roster to compare against.
             self.sync:Start()
         end
@@ -73,6 +78,31 @@ function Core:OnInitialize()
         SaveProfile = function(fields)
             return self:SaveProfile(fields)
         end,
+        GreetToggled = function()
+            self.greeter:Reset()
+        end,
+    })
+    self.greeter = addon.Greeter.New({
+        identity = function()
+            return addon.identity
+        end,
+        playerKey = function()
+            return self:PlayerKey()
+        end,
+        settings = function()
+            return self.db.profile.greet
+        end,
+        send = addon.Compat.SendGuildMessage,
+        random = math.random,
+        now = GetTime,
+        after = C_Timer.After,
+        inCombat = InCombatLockdown,
+        playSound = addon.Compat.PlayAlertSound,
+        announce = function(personIds)
+            if self.sync then
+                self.sync:Announce("greet", { persons = personIds })
+            end
+        end,
     })
     for _, command in ipairs(addon.Commands.ALWAYS) do
         self:RegisterChatCommand(command, "HandleCommand")
@@ -91,6 +121,8 @@ function Core:OnEnable()
     end)
     addon.Tooltip.Register()
     self:RegisterEvent("PLAYER_GUILD_UPDATE", "UpdateGuild")
+    self:RegisterEvent("CHAT_MSG_SYSTEM", "OnSystemMessage")
+    self:RegisterEvent("PLAYER_REGEN_ENABLED", "OnCombatEnded")
     self:UpdateGuild()
 end
 
@@ -324,6 +356,9 @@ function Core:UpdateGuild()
             return addon.guildSettings:IsAddonOfficer(charKey)
         end)
         self.sync:RegisterType("profile", addon.profiles:SyncHandler())
+        self.sync:Listen("greet", function(data, sender)
+            self.greeter:OnClaim(type(data) == "table" and data.persons, sender)
+        end)
         -- Keep the main panel current as identity and officer ranks change.
         addon.identity.RegisterCallback(self, "IdentityChanged", "RefreshMainPanel")
         addon.guildSettings.RegisterCallback(self, "GuildSettingsChanged", "RefreshMainPanel")
@@ -335,7 +370,33 @@ function Core:UpdateGuild()
         addon.profiles = nil
         self:UnregisterEvent("GUILD_ROSTER_UPDATE")
     end
+    self.greeter:Reset()
     self:RefreshMainPanel()
+end
+
+-- A "has come online" message means the roster has news; ask for it so Guild
+-- Greet notices the arrival within seconds rather than at the next update.
+-- A "has joined the guild" message offers Guild Greet's welcome.
+function Core:OnSystemMessage(_, message)
+    -- Retail can hand add-ons secret values (e.g. in instances); leave those alone.
+    if not addon.identity or not self.db.profile.greet.enabled or type(message) ~= "string"
+        or addon.Compat.IsSecret(message) then
+        return
+    end
+    local joined = addon.Compat.JoinedGuildName(message)
+    if joined then
+        local key = addon.Compat.NormalizeName(joined)
+        if key then
+            self.greeter:OnMemberJoined(key, addon.Compat.NameFromKey(key))
+        end
+        self.roster:Request()
+    elseif addon.Compat.OnlineMessageName(message) then
+        self.roster:Request()
+    end
+end
+
+function Core:OnCombatEnded()
+    self.greeter:OnCombatEnded()
 end
 
 function Core:RefreshMainPanel()

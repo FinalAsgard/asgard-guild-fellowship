@@ -14,6 +14,8 @@ A World of Warcraft add-on that helps guild members know each other, recognize e
 
 See [`docs/identity.md`](docs/identity.md) for the note convention and how to use it.
 
+**Guild Greet.** When guildmates come online or someone joins the guild, a small prompt offers to greet them. One click posts a varied, personal greeting. It greets people rather than alts, combines arrivals into one line, and lets at most two add-on users greet the same person. Off by default. See [`docs/guild-greet.md`](docs/guild-greet.md).
+
 ## Supported clients
 
 | Client | Manifest | Interface |

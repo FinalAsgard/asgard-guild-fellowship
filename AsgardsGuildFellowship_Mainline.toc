@@ -27,6 +27,9 @@ Core\IssuesView.lua
 Core\NoteHelper.lua
 Core\Protocol.lua
 Core\Sync.lua
+Core\GreetTracker.lua
+Core\GreetComposer.lua
+Core\Greeter.lua
 Core\UI.lua
 Core\Options.lua
 Core\Core.lua

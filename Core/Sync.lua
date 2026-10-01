@@ -36,7 +36,22 @@ Sync.ANSWER_DELAY = { 1, 4 }
 --   player                   this character's key
 --   enabled()                whether sync is turned on
 function Sync.New(deps)
-    return setmetatable({ deps = deps, types = {}, typeOrder = {}, pending = {} }, Sync)
+    return setmetatable({ deps = deps, types = {}, typeOrder = {}, pending = {}, listeners = {} }, Sync)
+end
+
+-- Announcements are one-off messages outside the record exchange (e.g. Guild
+-- Greet's "I greeted these people"). `listener(data, sender)` receives each
+-- announcement of `kind` from other players.
+function Sync:Listen(kind, listener)
+    self.listeners[kind] = listener
+end
+
+-- Sends an announcement of `kind` to the guild, unless sync is off or stopped.
+function Sync:Announce(kind, data)
+    if self.stopped or not self.deps.enabled() then
+        return
+    end
+    self:Send(kind, data, "NORMAL")
 end
 
 -- `handler`:
@@ -226,5 +241,7 @@ function Sync:OnMessage(message, sender)
         self:OnWant(data)
     elseif kind == "records" then
         self:OnRecords(data, sender)
+    elseif kind and self.listeners[kind] then
+        self.listeners[kind](data, sender)
     end
 end

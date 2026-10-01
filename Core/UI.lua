@@ -130,3 +130,67 @@ function Window:AddInput(label, text, onChange)
     end)
     self.content:AddChild(input)
 end
+
+local Prompt = {}
+Prompt.__index = Prompt
+
+-- A small pop-up with a line of text and buttons, e.g. a greeting prompt.
+-- `options`: title, width, height, and optionally status() returning a saved
+-- table where the prompt keeps its position. Closing it with its X counts as
+-- dismissing, and runs options.onClose.
+function UI.Prompt(options)
+    return setmetatable({ options = options }, Prompt)
+end
+
+-- Shows (or replaces) the prompt's content: a list of rows, each with an
+-- optional line of text and a list of buttons ({ text, onClick }).
+function Prompt:Show(rows)
+    if not self.frame then
+        local frame = aceGUI():Create("Window")
+        frame:SetTitle(self.options.title)
+        if self.options.status then
+            frame:SetStatusTable(self.options.status())
+        end
+        frame:SetWidth(self.options.width)
+        frame:SetHeight(self.options.height)
+        frame:SetLayout("Flow")
+        frame:SetCallback("OnClose", function(widget)
+            self.frame = nil
+            aceGUI():Release(widget)
+            if self.options.onClose and not self.hiding then
+                self.options.onClose()
+            end
+        end)
+        self.frame = frame
+    end
+    self.frame:ReleaseChildren()
+    for _, row in ipairs(rows) do
+        if row.text then
+            local label = aceGUI():Create("Label")
+            label:SetText(row.text)
+            label:SetFullWidth(true)
+            self.frame:AddChild(label)
+        end
+        for _, spec in ipairs(row.buttons or {}) do
+            local button = aceGUI():Create("Button")
+            button:SetText(spec.text)
+            button:SetCallback("OnClick", function()
+                spec.onClick()
+            end)
+            self.frame:AddChild(button)
+        end
+    end
+end
+
+-- Hides the prompt without running onClose.
+function Prompt:Hide()
+    if self.frame then
+        self.hiding = true
+        self.frame:Hide()
+        self.hiding = false
+    end
+end
+
+function Prompt:IsShown()
+    return self.frame ~= nil
+end
