@@ -66,8 +66,9 @@ function Harness.new(options)
         GetTime = function()
             return self.now
         end,
+        -- Follows the harness clock, so server-time expiry can be tested.
         GetServerTime = function()
-            return 0
+            return self.now
         end,
         C_Timer = {
             After = function(delay, callback)

@@ -19,6 +19,8 @@ local DB_DEFAULTS = {
         -- prompt: where the greet prompt was last dragged.
         -- newMessages: the player's new-member welcomes (nil: built-in defaults).
         greet = { enabled = false, welcomeNew = true, prompt = {} },
+        -- share: whether guildmates see what this player is up for.
+        availability = { share = true },
     },
 }
 local LAUNCHER_ICON = "Interface\\Icons\\Achievement_GuildPerk_EverybodysFriend"
@@ -49,6 +51,7 @@ function Core:OnInitialize()
             local playerKey = self:PlayerKey()
             local wasOfficer = addon.guildSettings:IsAddonOfficer(playerKey)
             addon.identity:Update(snapshot)
+            addon.availability:Prune()
             if wasOfficer ~= addon.guildSettings:IsAddonOfficer(playerKey) then
                 self.mainPanel:Refresh()
             end
@@ -143,13 +146,63 @@ function Core:HandleCommand(input)
         notes = function()
             self:OpenNoteHelper()
         end,
+        status = function(rest)
+            self:StatusCommand(rest)
+        end,
         usage = function()
             self:Print("/fellowship opens the main panel. /fellowship version prints the version.")
             self:Print("/fellowship who <name> looks up a guildmate by character name, first name, or alias.")
             self:Print("/fellowship clear <bio|alias> <name> (addon officers) clears someone's bio or alias.")
             self:Print("/fellowship notes opens the Note Helper for linking alts and setting aliases.")
+            self:Print("/fellowship status <" .. table.concat(addon.Availability.STATUSES, "|")
+                .. "|clear> sets what you're up for.")
         end,
     })
+end
+
+-- /gf status [status|clear]: prints, sets, or clears what this player is up for.
+function Core:StatusCommand(input)
+    local word = (input or ""):lower()
+    if not addon.availability then
+        self:Print("Availability works once you're in a guild.")
+        return
+    end
+    if word == "" then
+        local person = addon.identity:GetPerson(self:PlayerKey())
+        local status = addon.availability:Get(person and person.id)
+        self:Print(status == "none" and "You haven't set a status."
+            or ("Your status: %s."):format(addon.Availability.LABELS[status]))
+        return
+    end
+    local status = word == "clear" and "none" or word
+    if status == "none" or addon.Availability.LABELS[status] then
+        local ok = self:SetStatus(status)
+        if not ok then
+            self:Print("Your character isn't in the guild roster yet. Try again in a moment.")
+        elseif status == "none" then
+            self:Print("Status cleared.")
+        else
+            self:Print(("Status set: %s."):format(addon.Availability.LABELS[status]))
+        end
+        return
+    end
+    self:Print("Usage: /fellowship status <" .. table.concat(addon.Availability.STATUSES, "|") .. "|clear>")
+end
+
+-- Sets (or, with "none", clears) this player's status and sends it to the guild
+-- right away when sync and sharing are on. Returns true, or false and a reason.
+function Core:SetStatus(status)
+    if not addon.availability then
+        return false, "not in a guild"
+    end
+    local personId, reason = addon.availability:Set(self:PlayerKey(), status)
+    if not personId then
+        return false, reason
+    end
+    if self.sync and self.db.profile.sync.enabled and self.db.profile.availability.share then
+        self.sync:SendRecords("availability", { personId })
+    end
+    return true
 end
 
 -- /gf who <query>
@@ -356,6 +409,11 @@ function Core:UpdateGuild()
             return addon.guildSettings:IsAddonOfficer(charKey)
         end)
         self.sync:RegisterType("profile", addon.profiles:SyncHandler())
+        addon.availability = addon.Availability.New(addon.identity, GetServerTime, function(personId)
+            local me = addon.identity:GetPerson(self:PlayerKey())
+            return self.db.profile.availability.share or not me or me.id ~= personId
+        end)
+        self.sync:RegisterType("availability", addon.availability:SyncHandler())
         self.sync:Listen("greet", function(data, sender)
             self.greeter:OnClaim(type(data) == "table" and data.persons, sender)
         end)
@@ -368,6 +426,7 @@ function Core:UpdateGuild()
         addon.identity = nil
         addon.guildSettings = nil
         addon.profiles = nil
+        addon.availability = nil
         self:UnregisterEvent("GUILD_ROSTER_UPDATE")
     end
     self.greeter:Reset()

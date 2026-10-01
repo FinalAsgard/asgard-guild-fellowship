@@ -76,7 +76,9 @@ describe("Core", function()
         it("prints usage for an unknown command", function()
             local ns, log = boot()
             ns.Core:HandleCommand("dance")
-            assert.are.equal(4, #log.addon.printed)
+            assert.are.equal(5, #log.addon.printed)
+            assert.are.equal("/fellowship status <questing|dungeons|pvp|helping|anything|busy|clear> sets what "
+                .. "you're up for.", log.addon.printed[5])
             assert.is_false(ns.Core.mainPanel:IsShown())
         end)
     end)
@@ -652,6 +654,120 @@ describe("Core", function()
             impostor.ns.Core.sync:SendRecords("profile", { "G-D" })
             deliver(impostor, victim)
             assert.is_nil(victim.ns.profiles:Get("G-D"))
+        end)
+    end)
+
+    describe("availability", function()
+        local ROSTER = {
+            { name = "Dresden Zelwindran", guid = "G-D", note = "", online = false },
+            { name = "Malgen Zelwindran", guid = "G-M", note = ">Dresden", online = true },
+            { name = "Kira", guid = "G-K", note = "", online = true },
+        }
+
+        local function client(name)
+            local ns, log, harness = boot({
+                client = "Forever", guild = { name = "Asgard" }, roster = ROSTER,
+                units = { player = { name = name, player = true } },
+            })
+            ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", false)
+            harness:advance(1)
+            log.addon.printed = {}
+            return { name = name, ns = ns, log = log, harness = harness,
+                share = log.options.registered.table.args.features.args.shareAvailability }
+        end
+
+        local function deliver(from, to)
+            local sent = from.log.addon.sent
+            from.log.addon.sent = {}
+            for _, message in ipairs(sent) do
+                to.ns.Core:OnCommReceived(message.prefix, message.message, message.distribution, from.name)
+            end
+        end
+
+        it("sets a status for the person from /fellowship status and shares it with guildmates", function()
+            local alt = client("Malgen Zelwindran")
+            local friend = client("Kira")
+            alt.ns.Core:HandleCommand("status Dungeons")
+            assert.are.same({ "Status set: Dungeons." }, alt.log.addon.printed)
+            deliver(alt, friend)
+            assert.are.equal("dungeons", friend.ns.availability:Get("G-D"))
+            alt.ns.Core:HandleCommand("status")
+            assert.are.equal("Your status: Dungeons.", alt.log.addon.printed[2])
+        end)
+
+        it("clears a status everywhere", function()
+            local alt = client("Malgen Zelwindran")
+            local friend = client("Kira")
+            alt.ns.Core:HandleCommand("status pvp")
+            deliver(alt, friend)
+            alt.harness:advance(1)
+            alt.ns.Core:HandleCommand("status clear")
+            deliver(alt, friend)
+            assert.are.equal("none", friend.ns.availability:Get("G-D"))
+            assert.are.same({ "Status set: PvP.", "Status cleared." }, alt.log.addon.printed)
+            alt.ns.Core:HandleCommand("status")
+            assert.are.equal("You haven't set a status.", alt.log.addon.printed[3])
+        end)
+
+        it("prints usage for an unknown status", function()
+            local alt = client("Malgen Zelwindran")
+            alt.ns.Core:HandleCommand("status raiding")
+            assert.are.same({ "Usage: /fellowship status <questing|dungeons|pvp|helping|anything|busy|clear>" },
+                alt.log.addon.printed)
+            assert.are.equal("none", alt.ns.availability:Get("G-D"))
+        end)
+
+        it("explains that availability needs a guild", function()
+            local ns, log = boot({ units = { player = { name = "Nobody", player = true } } })
+            ns.Core:HandleCommand("status pvp")
+            assert.are.same({ "Availability works once you're in a guild." }, log.addon.printed)
+        end)
+
+        it("keeps a status local when sharing is off", function()
+            local alt = client("Malgen Zelwindran")
+            local friend = client("Kira")
+            assert.is_true(alt.share.get())
+            alt.share.set(nil, false)
+            alt.ns.Core:HandleCommand("status helping")
+            assert.are.same({}, alt.log.addon.sent)
+            assert.are.equal("helping", alt.ns.availability:Get("G-D"))
+            assert.is_nil(alt.ns.Core.sync.types.availability.Get("G-D"))
+            deliver(alt, friend)
+            assert.are.equal("none", friend.ns.availability:Get("G-D"))
+        end)
+
+        it("reaches a guildmate who logs in later, through the digest exchange", function()
+            local alt = client("Malgen Zelwindran")
+            alt.ns.Core:HandleCommand("status anything")
+            alt.log.addon.sent = {}
+            local friend = client("Kira")
+            for _ = 1, 40 do
+                deliver(alt, friend)
+                deliver(friend, alt)
+                alt.harness:advance(1)
+                friend.harness:advance(1)
+            end
+            assert.are.equal("anything", friend.ns.availability:Get("G-D"))
+        end)
+
+        it("ends a status when the person logs off", function()
+            local alt = client("Malgen Zelwindran")
+            local friend = client("Kira")
+            alt.ns.Core:HandleCommand("status questing")
+            deliver(alt, friend)
+            assert.are.equal("questing", friend.ns.availability:Get("G-D"))
+            local offline = {
+                ROSTER[1],
+                { name = "Malgen Zelwindran", guid = "G-M", note = ">Dresden", online = false },
+                ROSTER[3],
+            }
+            friend.harness.options.roster = offline
+            friend.ns.Core[friend.log.addon.events.GUILD_ROSTER_UPDATE](friend.ns.Core, "GUILD_ROSTER_UPDATE", true)
+            friend.harness:advance(1)
+            friend.harness.options.roster = ROSTER
+            friend.ns.Core[friend.log.addon.events.GUILD_ROSTER_UPDATE](friend.ns.Core, "GUILD_ROSTER_UPDATE", true)
+            friend.harness:advance(1)
+            assert.are.equal("none", friend.ns.availability:Get("G-D"))
         end)
     end)
 

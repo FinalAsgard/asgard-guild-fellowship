@@ -331,6 +331,20 @@ function Options.Build(profile, guild)
                     },
                     newMessages = messageList(profile, "newMessages", "New-member messages", 6,
                         addon.GreetComposer.DEFAULT_NEW),
+                    shareAvailability = {
+                        type = "toggle",
+                        name = "Share my availability",
+                        desc = "Let guildmates who use the add-on see what you're up for (set with "
+                            .. "/gf status). Off keeps your status to yourself. Needs sync on.",
+                        width = "full",
+                        order = 7,
+                        get = function()
+                            return profile().availability.share
+                        end,
+                        set = function(_, value)
+                            profile().availability.share = value
+                        end,
+                    },
                     sync = {
                         type = "toggle",
                         name = "Sync with other add-on users",
