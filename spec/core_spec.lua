@@ -1074,6 +1074,107 @@ describe("Core", function()
             assert.are.equal(before + 1, harness.rosterRequests)
         end)
 
+        describe("new members", function()
+            -- Every row of the open prompt as "text" or "[button]".
+            local function rows(ns)
+                if not ns.Core.greeter.prompt:IsShown() then
+                    return nil
+                end
+                local result = {}
+                for _, child in ipairs(ns.Core.greeter.prompt.frame.children) do
+                    table.insert(result, child.kind == "Label" and child.text or ("[" .. child.text .. "]"))
+                end
+                return result
+            end
+
+            local function button(ns, text)
+                for _, child in ipairs(ns.Core.greeter.prompt.frame.children) do
+                    if child.text == text then
+                        return child
+                    end
+                end
+            end
+
+            local function join(ns, harness, name)
+                ns.Core:OnSystemMessage("CHAT_MSG_SYSTEM", name .. " has joined the guild.")
+                table.insert(harness.options.roster, { name = name, guid = "G-" .. name, note = "", online = true })
+            end
+
+            it("offers a Welcome when someone joins and posts one new-member line on click", function()
+                local ns, harness = start(true)
+                join(ns, harness, "Mike Newman")
+                assert.are.same({ "Mike Newman joined the guild.", "[Welcome]", "[Dismiss]" }, rows(ns))
+                button(ns, "Welcome").callbacks.OnClick()
+                assert.are.equal(1, #harness.chatSent)
+                local text = harness.chatSent[1].text
+                local matched = false
+                for _, template in ipairs(ns.GreetComposer.DEFAULT_NEW) do
+                    matched = matched or text == template:gsub("{name}", "Mike Newman")
+                end
+                assert.is_true(matched, text)
+                assert.is_nil(rows(ns))
+            end)
+
+            it("doesn't also offer the new member as a return when they show up online", function()
+                local ns, harness, _, _, _, log = start(true)
+                join(ns, harness, "Mike Newman")
+                button(ns, "Dismiss").callbacks.OnClick()
+                ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", false)
+                harness:advance(1)
+                assert.is_nil(rows(ns))
+            end)
+
+            it("welcomes each new member once", function()
+                local ns, harness = start(true)
+                join(ns, harness, "Mike Newman")
+                ns.Core:OnSystemMessage("CHAT_MSG_SYSTEM", "Mike Newman has joined the guild.")
+                assert.are.same({ "Mike Newman joined the guild.", "[Welcome]", "[Dismiss]" }, rows(ns))
+            end)
+
+            it("keeps welcome-backs and welcomes in separate rows and lines", function()
+                local ns, harness, online = start(true)
+                online(4, true)
+                join(ns, harness, "Mike Newman")
+                assert.are.same({ "Kira came online.", "[Greet]", "Mike Newman joined the guild.", "[Welcome]",
+                    "[Dismiss]" }, rows(ns))
+                button(ns, "Greet").callbacks.OnClick()
+                assert.are.same({ "Mike Newman joined the guild.", "[Welcome]", "[Dismiss]" }, rows(ns))
+                assert.is_nil(harness.chatSent[1].text:find("Mike", 1, true))
+                button(ns, "Welcome").callbacks.OnClick()
+                assert.are.equal(2, #harness.chatSent)
+                assert.is_nil(harness.chatSent[2].text:find("Kira", 1, true))
+            end)
+
+            it("uses the player's own new-member messages", function()
+                local ns, harness, _, _, _, log = start(true)
+                log.options.registered.table.args.features.args.newMessages.set(nil, "Glad you're here, {name}!")
+                join(ns, harness, "Mike Newman")
+                button(ns, "Welcome").callbacks.OnClick()
+                assert.are.equal("Glad you're here, Mike Newman!", harness.chatSent[1].text)
+            end)
+
+            it("respects the Welcome new members toggle and Guild Greet being off", function()
+                local ns, harness, _, _, toggle, log = start(true)
+                local welcomeNew = log.options.registered.table.args.features.args.welcomeNew
+                assert.is_true(welcomeNew.get())
+                welcomeNew.set(nil, false)
+                join(ns, harness, "Mike Newman")
+                assert.is_nil(rows(ns))
+                welcomeNew.set(nil, true)
+                toggle.set(nil, false)
+                join(ns, harness, "Ann Other")
+                assert.is_nil(rows(ns))
+            end)
+
+            it("drops a new member other players already welcomed twice", function()
+                local ns, harness = start(true)
+                join(ns, harness, "Mike Newman")
+                ns.Core.greeter:OnClaim({ "Mike Newman-Forever" }, "Anna-Forever")
+                ns.Core.greeter:OnClaim({ "Mike Newman-Forever" }, "Bert-Forever")
+                assert.is_nil(rows(ns))
+            end)
+        end)
+
         describe("prompt behavior", function()
             it("collects arrivals into one prompt and greets them in one line", function()
                 local _, harness, online, prompt = start(true)

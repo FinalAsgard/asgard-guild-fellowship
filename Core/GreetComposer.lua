@@ -16,6 +16,13 @@ GreetComposer.DEFAULT_RETURN = {
     "Hi {name}!",
 }
 
+-- New-member welcomes, used until the player writes their own.
+GreetComposer.DEFAULT_NEW = {
+    "Welcome to the guild, {name}!",
+    "Welcome aboard, {name}! Glad to have you.",
+    "Hi {name}, welcome to the guild!",
+}
+
 -- "Zel", "Zel and Kira", "Zel, Kira and Mike".
 function GreetComposer.JoinNames(names)
     if #names <= 1 then
@@ -65,15 +72,15 @@ function GreetComposer.Pick(count, previous, random)
     return index
 end
 
--- Greeting lines for `names`, from the player's `templates` (cleaned; the
--- defaults when none are usable), never reusing template `previous` back to
--- back. Names that don't fit in one MAX_LINE line spill into further lines
--- with the same template; nothing is cut. Returns the lines and the template
--- index used.
-function GreetComposer.Lines(names, templates, random, previous)
+-- Greeting lines for `names`, from the player's `templates` (cleaned; when none
+-- are usable, `defaults`, or DEFAULT_RETURN), never reusing template
+-- `previous` back to back. Names that don't fit in one MAX_LINE line spill
+-- into further lines with the same template; nothing is cut. Returns the lines
+-- and the template index used.
+function GreetComposer.Lines(names, templates, random, previous, defaults)
     templates = GreetComposer.Clean(templates)
     if #templates == 0 then
-        templates = GreetComposer.DEFAULT_RETURN
+        templates = defaults or GreetComposer.DEFAULT_RETURN
     end
     local index = GreetComposer.Pick(#templates, previous, random)
     local template = templates[index]

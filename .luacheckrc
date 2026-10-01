@@ -12,6 +12,7 @@ read_globals = {
     "ChatFrameUtil",
     "Enum",
     "ERR_FRIEND_ONLINE_SS",
+    "ERR_GUILD_JOIN_S",
     "GameTooltip",
     "GetAddOnMetadata",
     "GetGuildInfo",

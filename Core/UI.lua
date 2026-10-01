@@ -142,9 +142,9 @@ function UI.Prompt(options)
     return setmetatable({ options = options }, Prompt)
 end
 
--- Shows (or replaces) the prompt's content. `buttons` is a list of
--- { text, onClick }.
-function Prompt:Show(text, buttons)
+-- Shows (or replaces) the prompt's content: a list of rows, each with an
+-- optional line of text and a list of buttons ({ text, onClick }).
+function Prompt:Show(rows)
     if not self.frame then
         local frame = aceGUI():Create("Window")
         frame:SetTitle(self.options.title)
@@ -164,17 +164,21 @@ function Prompt:Show(text, buttons)
         self.frame = frame
     end
     self.frame:ReleaseChildren()
-    local label = aceGUI():Create("Label")
-    label:SetText(text)
-    label:SetFullWidth(true)
-    self.frame:AddChild(label)
-    for _, spec in ipairs(buttons) do
-        local button = aceGUI():Create("Button")
-        button:SetText(spec.text)
-        button:SetCallback("OnClick", function()
-            spec.onClick()
-        end)
-        self.frame:AddChild(button)
+    for _, row in ipairs(rows) do
+        if row.text then
+            local label = aceGUI():Create("Label")
+            label:SetText(row.text)
+            label:SetFullWidth(true)
+            self.frame:AddChild(label)
+        end
+        for _, spec in ipairs(row.buttons or {}) do
+            local button = aceGUI():Create("Button")
+            button:SetText(spec.text)
+            button:SetCallback("OnClick", function()
+                spec.onClick()
+            end)
+            self.frame:AddChild(button)
+        end
     end
 end
 

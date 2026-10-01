@@ -1,8 +1,9 @@
 local _, addon = ...
 
--- Guild Greet: when guildmates come online, offers this player a prompt to
--- greet them. Greetings are only sent when the player clicks Greet, since the
--- game only lets add-ons post chat in response to a player action.
+-- Guild Greet: when guildmates come online, or someone joins the guild, offers
+-- this player a prompt to greet them. Greetings are only sent when the player
+-- clicks a button, since the game only lets add-ons post chat in response to a
+-- player action.
 local Greeter = {}
 Greeter.__index = Greeter
 addon.Greeter = Greeter
@@ -14,10 +15,30 @@ Greeter.MAX_GREETERS = 2
 -- Seconds a greeting announcement counts toward that limit for the arrival.
 Greeter.CLAIM_WINDOW = 300
 
+-- The two kinds of greeting, each with its own row in the prompt, button,
+-- message list (a settings field), and built-in defaults.
+Greeter.KINDS = {
+    {
+        kind = "back",
+        line = "%s came online.",
+        button = "Greet",
+        messages = "messages",
+        defaults = "DEFAULT_RETURN",
+    },
+    {
+        kind = "new",
+        line = "%s joined the guild.",
+        button = "Welcome",
+        messages = "newMessages",
+        defaults = "DEFAULT_NEW",
+    },
+}
+
 -- `deps`:
 --   identity()   the current IdentityStore, or nil outside a guild
 --   playerKey()  this character's key
---   settings()   the profile's greet settings ({ enabled, messages, prompt })
+--   settings()   the profile's greet settings
+--                ({ enabled, welcomeNew, messages, newMessages, prompt })
 --   send(text)   posts a line in guild chat
 --   random(n)    an integer from 1 to n
 --   now()        current time in seconds
@@ -30,7 +51,11 @@ function Greeter.New(deps)
     local greeter = setmetatable({
         deps = deps,
         tracker = addon.GreetTracker.New(),
-        pending = {},
+        -- pending[kind] = list of { personId, name, at } waiting in the prompt.
+        pending = { back = {}, new = {} },
+        lastTemplate = {},
+        -- joined[charKey] = when they joined, so their first login isn't a return.
+        joined = {},
         generation = 0,
         -- claims[personId][greeter] = when they announced greeting that person.
         claims = {},
@@ -38,7 +63,7 @@ function Greeter.New(deps)
     greeter.prompt = addon.UI.Prompt({
         title = "Guild Greet",
         width = 320,
-        height = 120,
+        height = 150,
         -- Remembers where the player drags it.
         status = function()
             return deps.settings().prompt
@@ -54,15 +79,20 @@ end
 -- Called on guild changes and when greeting is turned on or off.
 function Greeter:Reset()
     self.tracker:Reset()
+    self.joined = {}
     self:Dismiss()
 end
 
-local function names(pending)
+local function names(list)
     local result = {}
-    for _, arrival in ipairs(pending) do
+    for _, arrival in ipairs(list) do
         table.insert(result, arrival.name)
     end
     return result
+end
+
+function Greeter:HasPending()
+    return #self.pending.back > 0 or #self.pending.new > 0
 end
 
 -- Feeds a roster snapshot. New arrivals join the prompt.
@@ -80,8 +110,10 @@ function Greeter:OnSnapshot(snapshot)
     local arrivals = self.tracker:Observe(snapshot, personOf, now, personOf(playerKey) or playerKey)
     local added = false
     for _, arrival in ipairs(arrivals) do
-        if self:Greeters(arrival.personId) < Greeter.MAX_GREETERS then
-            table.insert(self.pending, {
+        local joinedAt = self.joined[arrival.member.key]
+        local newMember = joinedAt and now - joinedAt < addon.GreetTracker.RETURN_WINDOW
+        if not newMember and self:Greeters(arrival.personId) < Greeter.MAX_GREETERS then
+            table.insert(self.pending.back, {
                 personId = arrival.personId,
                 name = store:GetDisplayName(arrival.personId) or arrival.member.name,
                 at = now,
@@ -92,6 +124,23 @@ function Greeter:OnSnapshot(snapshot)
     if added then
         self:ShowPrompt()
     end
+end
+
+-- Someone joined the guild: offers a Welcome for them, once. `charKey` is
+-- their normalized key and `name` how to call them.
+function Greeter:OnMemberJoined(charKey, name)
+    local settings = self.deps.settings()
+    if not self.deps.identity() or not settings.enabled or settings.welcomeNew == false
+        or charKey == self.deps.playerKey() or self.joined[charKey] then
+        return
+    end
+    local now = self.deps.now()
+    self.joined[charKey] = now
+    if self:Greeters(charKey) >= Greeter.MAX_GREETERS then
+        return
+    end
+    table.insert(self.pending.new, { personId = charKey, name = name, at = now })
+    self:ShowPrompt()
 end
 
 -- How many players recently announced greeting `personId`.
@@ -127,24 +176,24 @@ function Greeter:OnClaim(personIds, sender)
             self.claims[personId][sender] = now
         end
     end
-    local kept = {}
-    for _, arrival in ipairs(self.pending) do
-        if self:Greeters(arrival.personId) < Greeter.MAX_GREETERS then
-            table.insert(kept, arrival)
-        else
-            changed = true
+    for kind, list in pairs(self.pending) do
+        local kept = {}
+        for _, arrival in ipairs(list) do
+            if self:Greeters(arrival.personId) < Greeter.MAX_GREETERS then
+                table.insert(kept, arrival)
+            else
+                changed = true
+            end
         end
+        self.pending[kind] = kept
     end
     if not changed then
         return
     end
-    if #kept == 0 then
+    if not self:HasPending() then
         self:Dismiss()
-    else
-        self.pending = kept
-        if self.prompt:IsShown() then
-            self:ShowPrompt(true)
-        end
+    elseif self.prompt:IsShown() then
+        self:ShowPrompt(true)
     end
 end
 
@@ -152,17 +201,25 @@ end
 -- combat, in which case it waits for OnCombatEnded. Each update restarts the
 -- timeout, except when `keepTimeout` (someone was removed, not added).
 function Greeter:ShowPrompt(keepTimeout)
-    if #self.pending == 0 or self.deps.inCombat() then
+    if not self:HasPending() or self.deps.inCombat() then
         return
     end
     -- A short sound when the prompt opens, not on every update while it's open.
     if not self.prompt:IsShown() then
         self.deps.playSound()
     end
-    self.prompt:Show(("%s came online."):format(addon.GreetComposer.JoinNames(names(self.pending))), {
-        { text = "Greet", onClick = function() self:Greet() end },
-        { text = "Dismiss", onClick = function() self:Dismiss() end },
-    })
+    local rows = {}
+    for _, info in ipairs(Greeter.KINDS) do
+        local list = self.pending[info.kind]
+        if #list > 0 then
+            table.insert(rows, {
+                text = info.line:format(addon.GreetComposer.JoinNames(names(list))),
+                buttons = { { text = info.button, onClick = function() self:Greet(info.kind) end } },
+            })
+        end
+    end
+    table.insert(rows, { buttons = { { text = "Dismiss", onClick = function() self:Dismiss() end } } })
+    self.prompt:Show(rows)
     if keepTimeout then
         return
     end
@@ -178,40 +235,56 @@ end
 -- After combat, shows the prompt for arrivals that are still recent enough.
 function Greeter:OnCombatEnded()
     local now = self.deps.now()
-    local fresh = {}
-    for _, arrival in ipairs(self.pending) do
-        if now - arrival.at < Greeter.PROMPT_TIMEOUT then
-            table.insert(fresh, arrival)
+    for kind, list in pairs(self.pending) do
+        local fresh = {}
+        for _, arrival in ipairs(list) do
+            if now - arrival.at < Greeter.PROMPT_TIMEOUT then
+                table.insert(fresh, arrival)
+            end
         end
+        self.pending[kind] = fresh
     end
-    self.pending = fresh
     self:ShowPrompt()
 end
 
--- Greets everyone in the prompt from the player's messages, in as few lines as
--- fit. Runs from the Greet click.
-function Greeter:Greet()
+-- Greets everyone waiting in one row ("back" or "new") from the player's
+-- messages for that kind, in as few lines as fit. Runs from that row's button.
+-- Other rows stay in the prompt.
+function Greeter:Greet(kind)
+    kind = kind or "back"
     local settings = self.deps.settings()
-    if #self.pending == 0 or not settings.enabled then
+    local list = self.pending[kind]
+    if not list or #list == 0 or not settings.enabled then
         return
     end
+    local info
+    for _, candidate in ipairs(Greeter.KINDS) do
+        if candidate.kind == kind then
+            info = candidate
+        end
+    end
     local lines
-    lines, self.lastTemplate = addon.GreetComposer.Lines(names(self.pending), settings.messages,
-        self.deps.random, self.lastTemplate)
+    lines, self.lastTemplate[kind] = addon.GreetComposer.Lines(names(list), settings[info.messages],
+        self.deps.random, self.lastTemplate[kind], addon.GreetComposer[info.defaults])
     local personIds = {}
-    for _, arrival in ipairs(self.pending) do
+    for _, arrival in ipairs(list) do
         table.insert(personIds, arrival.personId)
     end
     self.deps.announce(personIds)
     for _, line in ipairs(lines) do
         self.deps.send(line)
     end
-    self:Dismiss()
+    self.pending[kind] = {}
+    if self:HasPending() then
+        self:ShowPrompt(true)
+    else
+        self:Dismiss()
+    end
 end
 
 -- Clears the prompt without greeting.
 function Greeter:Dismiss()
-    self.pending = {}
+    self.pending = { back = {}, new = {} }
     self.generation = self.generation + 1
     self.prompt:Hide()
 end

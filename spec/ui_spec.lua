@@ -144,17 +144,29 @@ describe("UI.Prompt", function()
         return UI.Prompt({ title = "Hello", width = 200, height = 100, onClose = onClose }), gui
     end
 
-    it("shows text and buttons, and replaces them on the next Show", function()
+    it("shows rows of text and buttons, and replaces them on the next Show", function()
         local prompt, gui = newPrompt()
         local clicked
-        prompt:Show("Kira came online.", { { text = "Greet", onClick = function() clicked = "greet" end } })
+        prompt:Show({
+            {
+                text = "Kira came online.",
+                buttons = { { text = "Greet", onClick = function() clicked = "greet" end } },
+            },
+            { text = "Mike joined the guild.", buttons = { { text = "Welcome", onClick = function() end } } },
+            { buttons = { { text = "Dismiss", onClick = function() end } } },
+        })
         local window = gui.created[1]
         assert.are.equal("Window", window.kind)
         assert.are.equal("Hello", window.title)
-        assert.are.equal("Kira came online.", window.children[1].text)
+        local kinds = {}
+        for _, child in ipairs(window.children) do
+            table.insert(kinds, child.kind .. ":" .. child.text)
+        end
+        assert.are.same({ "Label:Kira came online.", "Button:Greet", "Label:Mike joined the guild.",
+            "Button:Welcome", "Button:Dismiss" }, kinds)
         window.children[2].callbacks.OnClick()
         assert.are.equal("greet", clicked)
-        prompt:Show("Zel and Kira came online.", {})
+        prompt:Show({ { text = "Zel and Kira came online." } })
         assert.are.equal(1, #window.children)
         assert.are.equal("Zel and Kira came online.", window.children[1].text)
         assert.is_true(prompt:IsShown())
@@ -163,11 +175,11 @@ describe("UI.Prompt", function()
     it("runs onClose when the player closes it, but not when hidden by code", function()
         local closed = 0
         local prompt, gui = newPrompt(function() closed = closed + 1 end)
-        prompt:Show("x", {})
+        prompt:Show({ { text = "x" } })
         prompt:Hide()
         assert.are.equal(0, closed)
         assert.is_false(prompt:IsShown())
-        prompt:Show("y", {})
+        prompt:Show({ { text = "y" } })
         local window
         for _, widget in ipairs(gui.created) do
             if widget.kind == "Window" then

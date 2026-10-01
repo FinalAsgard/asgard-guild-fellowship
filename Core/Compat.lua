@@ -200,3 +200,12 @@ function Compat.PlayAlertSound()
         PlaySound(SOUNDKIT.TELL_MESSAGE)
     end
 end
+
+-- The name in a "has joined the guild" system message, or nil.
+function Compat.JoinedGuildName(message)
+    local pattern = Compat.PatternFromFormat(ERR_GUILD_JOIN_S)
+    if not pattern or type(message) ~= "string" then
+        return nil
+    end
+    return message:match(pattern)
+end

@@ -93,6 +93,7 @@ function Harness.new(options)
             end,
         },
         ERR_FRIEND_ONLINE_SS = "|Hplayer:%s|h[%s]|h has come online.",
+        ERR_GUILD_JOIN_S = "%s has joined the guild.",
         SOUNDKIT = { TELL_MESSAGE = 3081 },
         PlaySound = function(kit)
             table.insert(self.soundsPlayed, kit)

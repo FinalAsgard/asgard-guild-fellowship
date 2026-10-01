@@ -17,7 +17,8 @@ local DB_DEFAULTS = {
         sync = { enabled = true },
         -- messages: the player's welcome-back lines (nil: built-in defaults);
         -- prompt: where the greet prompt was last dragged.
-        greet = { enabled = false, prompt = {} },
+        -- newMessages: the player's new-member welcomes (nil: built-in defaults).
+        greet = { enabled = false, welcomeNew = true, prompt = {} },
     },
 }
 local LAUNCHER_ICON = "Interface\\Icons\\Achievement_GuildPerk_EverybodysFriend"
@@ -375,8 +376,19 @@ end
 
 -- A "has come online" message means the roster has news; ask for it so Guild
 -- Greet notices the arrival within seconds rather than at the next update.
+-- A "has joined the guild" message offers Guild Greet's welcome.
 function Core:OnSystemMessage(_, message)
-    if addon.identity and self.db.profile.greet.enabled and addon.Compat.OnlineMessageName(message) then
+    if not addon.identity or not self.db.profile.greet.enabled then
+        return
+    end
+    local joined = addon.Compat.JoinedGuildName(message)
+    if joined then
+        local key = addon.Compat.NormalizeName(joined)
+        if key then
+            self.greeter:OnMemberJoined(key, addon.Compat.NameFromKey(key))
+        end
+        self.roster:Request()
+    elseif addon.Compat.OnlineMessageName(message) then
         self.roster:Request()
     end
 end
