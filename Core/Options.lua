@@ -159,6 +159,10 @@ local function guildSettingsGroup(guild)
                     return selected()[index] == true
                 end,
                 set = function(_, index, value)
+                    -- The guild master's rank always counts (see GuildSettings).
+                    if index == 0 then
+                        return
+                    end
                     local ranks = {}
                     for rankIndex in pairs(selected()) do
                         ranks[rankIndex] = true

@@ -24,10 +24,16 @@ function GuildSettings.DefaultOfficerRanks(ranks)
     return officerRanks
 end
 
--- The officer ranks in force: the record's, or the default.
+-- The officer ranks in force: the record's, or the default. The guild master's
+-- rank always counts, so a published record can never lock everyone out of
+-- correcting it.
 function GuildSettings.OfficerRanks(record, ranks)
     if record and type(record.officerRanks) == "table" then
-        return record.officerRanks
+        local officerRanks = { [0] = true }
+        for index, enabled in pairs(record.officerRanks) do
+            officerRanks[index] = enabled
+        end
+        return officerRanks
     end
     return GuildSettings.DefaultOfficerRanks(ranks)
 end
@@ -63,7 +69,7 @@ function GuildSettings:Publish(officerRanks, publisherKey)
     if not self:IsAddonOfficer(publisherKey) then
         return false
     end
-    local ranks = {}
+    local ranks = { [0] = true }
     for index, enabled in pairs(officerRanks) do
         if enabled then
             ranks[index] = true

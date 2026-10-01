@@ -52,8 +52,10 @@ describe("GuildSettings", function()
         assert.are.same({ [0] = true }, ns.GuildSettings.DefaultOfficerRanks({}))
     end)
 
-    it("uses the record's officer ranks when there is one", function()
-        assert.are.same({ [2] = true }, ns.GuildSettings.OfficerRanks({ officerRanks = { [2] = true } }, RANKS))
+    it("uses the record's officer ranks when there is one, always keeping the guild master's", function()
+        assert.are.same({ [0] = true, [2] = true },
+            ns.GuildSettings.OfficerRanks({ officerRanks = { [2] = true } }, RANKS))
+        assert.are.same({ [0] = true }, ns.GuildSettings.OfficerRanks({ officerRanks = {} }, RANKS))
         assert.are.same({ [0] = true, [1] = true }, ns.GuildSettings.OfficerRanks(nil, RANKS))
     end)
 
@@ -78,6 +80,14 @@ describe("GuildSettings", function()
         assert.are.equal(1, fired)
         assert.is_true(settings:IsAddonOfficer("Veteran-Forever"))
         assert.is_false(settings:IsAddonOfficer("Officer-Forever"))
+    end)
+
+    it("never lets a publish lock out the guild master", function()
+        local settings = newSettings()
+        settings:Publish({ [0] = false, [1] = false }, "Officer-Forever")
+        assert.are.same({ [0] = true }, settings:Record().officerRanks)
+        assert.is_true(settings:IsAddonOfficer("Leader-Forever"))
+        assert.is_true(settings:Publish({ [0] = true, [1] = true }, "Leader-Forever"))
     end)
 
     it("refuses a publish from a non-officer", function()
@@ -148,6 +158,11 @@ describe("SyncMerge.GuildSettings", function()
         local current = record(1, "Leader-Forever", { [0] = true, [3] = true })
         assert.are.same({ true }, check(record(2, "Member-Forever"), current, "Member-Forever"))
         assert.are.same({ false, "not an officer" }, check(record(2, "Officer-Forever"), current, "Officer-Forever"))
+    end)
+
+    it("lets the guild master correct a record that named no officer ranks", function()
+        local stranded = { version = 1, publisher = "Officer-Forever", officerRanks = {} }
+        assert.are.same({ true }, check(record(2, "Leader-Forever", { [0] = true, [1] = true }), stranded))
     end)
 
     it("rejects malformed records", function()

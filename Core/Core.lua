@@ -40,7 +40,14 @@ function Core:OnInitialize()
     })
     self.roster = addon.RosterAdapter.New(function(snapshot)
         if addon.identity then
+            -- A rank change doesn't fire IdentityChanged, so redraw the main
+            -- panel when it turns this player's officer tools on or off.
+            local playerKey = self:PlayerKey()
+            local wasOfficer = addon.guildSettings:IsAddonOfficer(playerKey)
             addon.identity:Update(snapshot)
+            if wasOfficer ~= addon.guildSettings:IsAddonOfficer(playerKey) then
+                self.mainPanel:Refresh()
+            end
             -- Sync starts once there is a roster to compare against.
             self.sync:Start()
         end

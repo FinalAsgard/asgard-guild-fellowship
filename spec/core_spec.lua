@@ -786,6 +786,15 @@ describe("Core", function()
                 "Label:Officer tools appear here for your guild's addon officers." }, texts())
         end)
 
+        it("shows the officer view once the player is promoted, without reopening", function()
+            local ns, texts, harness, log = open("Kira", MESSY)
+            assert.are.equal("Label:Officer tools appear here for your guild's addon officers.", texts()[2])
+            harness.options.roster[5].rankIndex = 0
+            ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", false)
+            harness:advance(1)
+            assert.are.equal("Heading:Identity Issues (2)", texts()[2])
+        end)
+
         it("updates live when identity changes", function()
             local ns, texts, harness, log = open("Leader", MESSY)
             harness.options.roster = CLEAN
