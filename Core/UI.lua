@@ -135,8 +135,9 @@ local Prompt = {}
 Prompt.__index = Prompt
 
 -- A small pop-up with a line of text and buttons, e.g. a greeting prompt.
--- `options`: title, width, height. Closing it with its X counts as dismissing,
--- and runs options.onClose.
+-- `options`: title, width, height, and optionally status() returning a saved
+-- table where the prompt keeps its position. Closing it with its X counts as
+-- dismissing, and runs options.onClose.
 function UI.Prompt(options)
     return setmetatable({ options = options }, Prompt)
 end
@@ -147,6 +148,9 @@ function Prompt:Show(text, buttons)
     if not self.frame then
         local frame = aceGUI():Create("Window")
         frame:SetTitle(self.options.title)
+        if self.options.status then
+            frame:SetStatusTable(self.options.status())
+        end
         frame:SetWidth(self.options.width)
         frame:SetHeight(self.options.height)
         frame:SetLayout("Flow")

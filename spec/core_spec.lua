@@ -984,7 +984,7 @@ describe("Core", function()
                 end
                 return result
             end
-            return ns, harness, online, prompt, log.options.registered.table.args.features.args.greet
+            return ns, harness, online, prompt, log.options.registered.table.args.features.args.greet, log
         end
 
         it("is off by default and shows nothing", function()
@@ -1072,6 +1072,83 @@ describe("Core", function()
             assert.are.equal(before + 1, harness.rosterRequests)
             ns.Core:OnSystemMessage("CHAT_MSG_SYSTEM", "You are now AFK.")
             assert.are.equal(before + 1, harness.rosterRequests)
+        end)
+
+        describe("prompt behavior", function()
+            it("collects arrivals into one prompt and greets them in one line", function()
+                local _, harness, online, prompt = start(true)
+                online(2, true)
+                online(4, true)
+                assert.are.equal("Zel and Kira came online.", prompt().text)
+                prompt().buttons.Greet.callbacks.OnClick()
+                assert.are.equal(1, #harness.chatSent)
+                assert.truthy(harness.chatSent[1].text:find("Zel and Kira", 1, true))
+            end)
+
+            it("hides an unanswered prompt after the timeout, restarting it for new arrivals", function()
+                local ns, harness, online, prompt = start(true)
+                local timeout = ns.Greeter.PROMPT_TIMEOUT
+                online(4, true)
+                harness:advance(timeout - 10)
+                online(2, true)
+                harness:advance(20)
+                assert.are.equal("Kira and Zel came online.", prompt().text)
+                harness:advance(timeout)
+                assert.is_nil(prompt())
+                assert.are.same({}, harness.chatSent)
+            end)
+
+            it("waits until combat ends to show the prompt", function()
+                local ns, harness, online, prompt = start(true)
+                harness.options.inCombat = true
+                online(4, true)
+                assert.is_nil(prompt())
+                harness.options.inCombat = false
+                ns.Core:OnCombatEnded()
+                assert.are.equal("Kira came online.", prompt().text)
+            end)
+
+            it("drops arrivals that expired during combat", function()
+                local ns, harness, online, prompt = start(true)
+                harness.options.inCombat = true
+                online(4, true)
+                harness:advance(ns.Greeter.PROMPT_TIMEOUT)
+                harness.options.inCombat = false
+                ns.Core:OnCombatEnded()
+                assert.is_nil(prompt())
+            end)
+
+            it("uses the player's own messages without repeating one back to back", function()
+                local _, harness, online, prompt, _, log = start(true)
+                local messages = log.options.registered.table.args.features.args.greetMessages
+                assert.truthy(messages.get():find("Welcome back, {name}!", 1, true))
+                messages.set(nil, "Hi {name}!\n\n  Hey {name}!  \n")
+                assert.are.equal("Hi {name}!\nHey {name}!", messages.get())
+                local sent = {}
+                for _, index in ipairs({ 4, 2, 4 }) do
+                    harness:advance(1800)
+                    online(index, true)
+                    prompt().buttons.Greet.callbacks.OnClick()
+                    online(index, false)
+                    table.insert(sent, harness.chatSent[#harness.chatSent].text)
+                end
+                for i, text in ipairs(sent) do
+                    assert.truthy(text:match("^H[ie]y? "), text)
+                    if i > 1 then
+                        assert.are_not.equal(sent[i - 1]:match("^(%a+)"), text:match("^(%a+)"))
+                    end
+                end
+                messages.set(nil, "   ")
+                assert.truthy(messages.get():find("Welcome back, {name}!", 1, true))
+            end)
+
+            it("remembers where the prompt was dragged", function()
+                local ns, _, online, prompt = start(true)
+                online(4, true)
+                assert.is_table(prompt())
+                local frame = ns.Core.greeter.prompt.frame
+                assert.are.equal(ns.Core.db.profile.greet.prompt, frame.status)
+            end)
         end)
     end)
 end)

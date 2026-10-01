@@ -102,32 +102,104 @@ describe("GreetComposer", function()
         return 1
     end
 
+    local function lines(names, templates, random, previous)
+        return (GreetComposer.Lines(names, templates, random or first, previous))
+    end
+
     it("fills {name} with the person's name", function()
-        assert.are.equal("Welcome back, Zel!", GreetComposer.Compose({ "Zel" }, { "Welcome back, {name}!" }, first))
+        assert.are.same({ "Welcome back, Zel!" }, lines({ "Zel" }, { "Welcome back, {name}!" }))
     end)
 
-    it("appends the name to a template without {name}", function()
-        assert.are.equal("Welcome back! Zel", GreetComposer.Compose({ "Zel" }, { "Welcome back!" }, first))
+    it("appends the names to a template without {name}", function()
+        assert.are.same({ "Welcome back! Zel and Kira" }, lines({ "Zel", "Kira" }, { "Welcome back!" }))
     end)
 
-    it("falls back to the built-in templates", function()
-        assert.are.equal("Welcome back, Zel!", GreetComposer.Compose({ "Zel" }, nil, first))
-        assert.are.equal("Welcome back, Zel!", GreetComposer.Compose({ "Zel" }, {}, first))
+    it("joins names naturally", function()
+        assert.are.equal("Zel", GreetComposer.JoinNames({ "Zel" }))
+        assert.are.equal("Zel and Kira", GreetComposer.JoinNames({ "Zel", "Kira" }))
+        assert.are.equal("Zel, Kira and Mike", GreetComposer.JoinNames({ "Zel", "Kira", "Mike" }))
+        assert.are.same({ "Hi Zel, Kira and Mike!" }, lines({ "Zel", "Kira", "Mike" }, { "Hi {name}!" }))
+    end)
+
+    it("falls back to the built-in templates when none are usable", function()
+        assert.are.same({ "Welcome back, Zel!" }, lines({ "Zel" }, nil))
+        assert.are.same({ "Welcome back, Zel!" }, lines({ "Zel" }, {}))
+        assert.are.same({ "Welcome back, Zel!" }, lines({ "Zel" }, { "   ", "|" }))
         assert.is_true(#GreetComposer.DEFAULT_RETURN > 1)
     end)
 
-    it("uses the random function to pick a template", function()
-        local templates = { "A {name}", "B {name}", "C {name}" }
-        assert.are.equal("C Zel", GreetComposer.Compose({ "Zel" }, templates, function(n)
-            return n
-        end))
+    it("cleans templates", function()
+        assert.are.same({ "Hi {name}!", "Yo", "ab" },
+            GreetComposer.Clean({ "  Hi {name}!  ", "", "|cff00ff00Yo|r\n", 5, "\t", "a|b" }))
     end)
 
     it("keeps % signs in names literal", function()
-        assert.are.equal("Hi 100%!", GreetComposer.Compose({ "100%" }, { "Hi {name}!" }, first))
+        assert.are.same({ "Hi 100%!" }, lines({ "100%" }, { "Hi {name}!" }))
     end)
 
-    it("joins two names", function()
-        assert.are.equal("Zel and Kira", GreetComposer.JoinNames({ "Zel", "Kira" }))
+    describe("variety", function()
+        local templates = { "A {name}", "B {name}", "C {name}" }
+
+        it("never repeats the previous template", function()
+            for previous = 1, 3 do
+                for roll = 1, 2 do
+                    local _, index = GreetComposer.Lines({ "Zel" }, templates, function()
+                        return roll
+                    end, previous)
+                    assert.are_not.equal(previous, index)
+                end
+            end
+        end)
+
+        it("can pick every other template", function()
+            local seen = {}
+            for roll = 1, 2 do
+                local _, index = GreetComposer.Lines({ "Zel" }, templates, function()
+                    return roll
+                end, 2)
+                seen[index] = true
+            end
+            assert.are.same({ [1] = true, [3] = true }, seen)
+        end)
+
+        it("allows a single template to repeat", function()
+            local result, index = GreetComposer.Lines({ "Zel" }, { "Only {name}" }, first, 1)
+            assert.are.same({ "Only Zel" }, result)
+            assert.are.equal(1, index)
+        end)
+    end)
+
+    describe("long batches", function()
+        local function many(count)
+            local names = {}
+            for i = 1, count do
+                names[i] = ("Adventurer%02d"):format(i)
+            end
+            return names
+        end
+
+        it("splits into several lines within the chat limit, keeping every name whole", function()
+            local names = many(30)
+            local result = lines(names, { "Welcome back, {name}!" })
+            assert.is_true(#result > 1)
+            local found = {}
+            for _, line in ipairs(result) do
+                assert.is_true(#line <= GreetComposer.MAX_LINE, line)
+                assert.are.equal("Welcome back, ", line:sub(1, 14))
+                for name in line:gmatch("Adventurer%d%d") do
+                    table.insert(found, name)
+                end
+            end
+            assert.are.same(names, found)
+        end)
+
+        it("uses one template for every line of a batch", function()
+            local result = lines(many(30), { "Hi {name}!", "Hey {name}!" }, function()
+                return 2
+            end)
+            for _, line in ipairs(result) do
+                assert.are.equal("Hey ", line:sub(1, 4))
+            end
+        end)
     end)
 end)

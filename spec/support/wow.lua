@@ -16,6 +16,7 @@ Harness.__index = Harness
 --   roster     guild members: { name, guid, rankIndex, level, class, className, zone, note, online }
 --              (name as GetGuildRosterInfo reports it, with or without realm)
 --   canEditPublicNote  whether CanEditPublicNote() is true
+--   inCombat   whether InCombatLockdown() is true
 --   ranks      guild ranks in order (guild master first): { name, canEditOfficerNote }
 --   units      unit tokens the client knows: { mouseover = { name = ..., realm = ..., player = true } }
 --   globals    extra globals, e.g. another add-on's SLASH_ entries or a fake LibStub
@@ -91,6 +92,9 @@ function Harness.new(options)
             end,
         },
         ERR_FRIEND_ONLINE_SS = "|Hplayer:%s|h[%s]|h has come online.",
+        InCombatLockdown = function()
+            return options.inCombat == true
+        end,
         SendChatMessage = function(text, channel)
             table.insert(self.chatSent, { text = text, channel = channel })
         end,

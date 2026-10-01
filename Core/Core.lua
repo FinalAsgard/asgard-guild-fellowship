@@ -15,7 +15,9 @@ local DB_DEFAULTS = {
         minimap = {},
         chatTag = addon.ChatTag.DEFAULTS,
         sync = { enabled = true },
-        greet = { enabled = false },
+        -- messages: the player's welcome-back lines (nil: built-in defaults);
+        -- prompt: where the greet prompt was last dragged.
+        greet = { enabled = false, prompt = {} },
     },
 }
 local LAUNCHER_ICON = "Interface\\Icons\\Achievement_GuildPerk_EverybodysFriend"
@@ -92,6 +94,8 @@ function Core:OnInitialize()
         send = addon.Compat.SendGuildMessage,
         random = math.random,
         now = GetTime,
+        after = C_Timer.After,
+        inCombat = InCombatLockdown,
     })
     for _, command in ipairs(addon.Commands.ALWAYS) do
         self:RegisterChatCommand(command, "HandleCommand")
@@ -111,6 +115,7 @@ function Core:OnEnable()
     addon.Tooltip.Register()
     self:RegisterEvent("PLAYER_GUILD_UPDATE", "UpdateGuild")
     self:RegisterEvent("CHAT_MSG_SYSTEM", "OnSystemMessage")
+    self:RegisterEvent("PLAYER_REGEN_ENABLED", "OnCombatEnded")
     self:UpdateGuild()
 end
 
@@ -365,6 +370,10 @@ function Core:OnSystemMessage(_, message)
     if addon.identity and self.db.profile.greet.enabled and addon.Compat.OnlineMessageName(message) then
         self.roster:Request()
     end
+end
+
+function Core:OnCombatEnded()
+    self.greeter:OnCombatEnded()
 end
 
 function Core:RefreshMainPanel()

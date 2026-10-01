@@ -275,6 +275,30 @@ function Options.Build(profile, guild)
                             guild.GreetToggled()
                         end,
                     },
+                    greetMessages = {
+                        type = "input",
+                        name = "Welcome-back messages",
+                        desc = "One per line. {name} becomes the people being greeted; a line without {name} "
+                            .. "gets the names at the end. One is picked at random, never the same twice in a row.",
+                        multiline = 5,
+                        width = "full",
+                        order = 4,
+                        get = function()
+                            local messages = profile().greet.messages
+                            if not messages or #messages == 0 then
+                                messages = addon.GreetComposer.DEFAULT_RETURN
+                            end
+                            return table.concat(messages, "\n")
+                        end,
+                        set = function(_, value)
+                            local lines = {}
+                            for line in (value or ""):gmatch("[^\r\n]+") do
+                                table.insert(lines, line)
+                            end
+                            local messages = addon.GreetComposer.Clean(lines)
+                            profile().greet.messages = #messages > 0 and messages or nil
+                        end,
+                    },
                     sync = {
                         type = "toggle",
                         name = "Sync with other add-on users",

@@ -25,6 +25,7 @@ read_globals = {
     "GuildRoster",
     "GuildRosterSetPublicNote",
     "hooksecurefunc",
+    "InCombatLockdown",
     "IsInGuild",
     "issecretvalue",
     "LibStub",

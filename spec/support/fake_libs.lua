@@ -27,6 +27,7 @@ local function newAceGUI(log)
         function widget:SetLabel(label) self.label = label end
         function widget:SetList(list, order) self.list, self.order = list, order end
         function widget:SetValue(value) self.value = value end
+        function widget:SetStatusTable(status) self.status = status end
         function widget:Hide()
             -- Like AceGUI's Frame, hiding fires OnClose.
             if self.callbacks.OnClose then
