@@ -426,7 +426,7 @@ function Core:UpdateGuild()
         -- Keep the main panel current as identity and officer ranks change.
         addon.identity.RegisterCallback(self, "IdentityChanged", "RefreshMainPanel")
         addon.guildSettings.RegisterCallback(self, "GuildSettingsChanged", "RefreshMainPanel")
-        addon.availability.RegisterCallback(self, "AvailabilityChanged", "RefreshMainPanel")
+        addon.availability.RegisterCallback(self, "AvailabilityChanged", "OnAvailabilityChanged")
         self:RegisterEvent("GUILD_ROSTER_UPDATE", "OnGuildRosterUpdate")
         self.roster:Request()
     else
@@ -463,6 +463,33 @@ end
 
 function Core:OnCombatEnded()
     self.greeter:OnCombatEnded()
+end
+
+function Core:OnAvailabilityChanged()
+    self:RefreshMainPanel()
+    self:SchedulePrune()
+end
+
+-- A status that simply times out fires no event, so prune when the next one
+-- lapses; pruning fires AvailabilityChanged, which redraws and reschedules.
+function Core:SchedulePrune()
+    local availability = addon.availability
+    local expiry = availability and availability:NextExpiry()
+    if not expiry or (self.pruneAt and self.pruneAt <= expiry) then
+        return
+    end
+    self.pruneAt = expiry
+    C_Timer.After(math.max(expiry - GetServerTime(), 0) + 1, function()
+        if self.pruneAt ~= expiry then
+            return
+        end
+        self.pruneAt = nil
+        if addon.availability == availability then
+            availability:Prune()
+        end
+        -- Also covers a guild change while waiting: schedule for the current one.
+        self:SchedulePrune()
+    end)
 end
 
 function Core:RefreshMainPanel()

@@ -832,6 +832,22 @@ describe("Core", function()
                 panel(friend)[2])
         end)
 
+        it("drops a status from an open panel when it times out, without a roster update", function()
+            local alt = client("Malgen Zelwindran")
+            local friend = client("Kira")
+            friend.ns.Core:HandleCommand("")
+            alt.ns.Core:HandleCommand("status dungeons")
+            deliver(alt, friend)
+            assert.are.equal("Label:Dresden — Malgen Zelwindran, Warrior 30 · Up for Dungeons · Duskwood",
+                panel(friend)[2])
+            friend.harness:advance(2 * 60 * 60 - 10)
+            assert.are.equal("Label:Dresden — Malgen Zelwindran, Warrior 30 · Up for Dungeons · Duskwood",
+                panel(friend)[2])
+            friend.harness:advance(20)
+            assert.are.equal("Label:Dresden — Malgen Zelwindran, Warrior 30 · Duskwood", panel(friend)[2])
+            assert.is_nil(friend.ns.availability.records["G-D"])
+        end)
+
         it("updates Discovery when the roster changes and hides people set to Busy", function()
             local alt = client("Malgen Zelwindran")
             local friend = client("Kira")

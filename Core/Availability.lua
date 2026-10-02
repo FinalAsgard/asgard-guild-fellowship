@@ -89,6 +89,17 @@ function Availability:Prune()
     end
 end
 
+-- The server time the next live status lapses, or nil when none will.
+function Availability:NextExpiry()
+    local soonest
+    for personId, record in pairs(self.records) do
+        if self:IsLive(personId, record) and (not soonest or record.expiresAt < soonest) then
+            soonest = record.expiresAt
+        end
+    end
+    return soonest
+end
+
 -- The person's live status ("questing", ..., "busy"), or "none".
 function Availability:Get(personId)
     local record = personId and self.records[personId]

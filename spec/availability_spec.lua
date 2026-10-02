@@ -89,6 +89,17 @@ describe("Availability", function()
         assert.are.equal("none", availability:Get("G-Dresden Zelwindran"))
     end)
 
+    it("reports when the next live status lapses", function()
+        local availability, _, clock = setup()
+        assert.is_nil(availability:NextExpiry())
+        availability:Set("Kira-Forever", "pvp")
+        clock.now = 1500
+        availability:Set("Malgen-Forever", "busy")
+        assert.are.equal(1000 + TTL, availability:NextExpiry())
+        clock.now = 1000 + TTL
+        assert.are.equal(1500 + TTL, availability:NextExpiry())
+    end)
+
     it("fires AvailabilityChanged when pruning a status that was set", function()
         local availability, _, clock = setup()
         availability:Set("Kira-Forever", "pvp")
