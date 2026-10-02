@@ -33,6 +33,8 @@ function Window:Show()
     frame:SetCallback("OnClose", function(widget)
         self.frame = nil
         self.content = nil
+        -- Released widgets are reused elsewhere, so forget this window's boxes.
+        self.inputs = nil
         aceGUI():Release(widget)
     end)
     local content = aceGUI():Create("ScrollFrame")

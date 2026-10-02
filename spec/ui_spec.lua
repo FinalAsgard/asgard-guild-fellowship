@@ -154,6 +154,20 @@ describe("UI.Window", function()
             assert.are.equal(2, count)
         end)
 
+        it("forgets its text boxes when closed, so a reused widget can't block reopening", function()
+            local count = 0
+            local window, scroll = rendered(function(w)
+                count = count + 1
+                w:AddInput("Search", "", function() end)
+            end)
+            local input = scroll.children[1]
+            window:Hide()
+            -- AceGUI hands the released box to some other window, where it gets focus.
+            input.editbox = { HasFocus = function() return true end }
+            window:Show()
+            assert.are.equal(2, count)
+        end)
+
         it("adds checkboxes that report changes", function()
             local checked
             local _, scroll = rendered(function(window)
