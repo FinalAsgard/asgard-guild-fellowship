@@ -8,7 +8,8 @@ addon.RosterView = RosterView
 -- The roster: { people, onlinePeople, totalPeople, onlineCharacters }. Each
 -- person: { personId, name, alias, status, online, current (the character
 -- they're on, or nil), characters = { main first: { key, name, level, class,
--- className, online, zone, isMain } }, helps = { topic labels } }. Online people come first, then by name.
+-- className, online, zone, isMain } }, helps = { topic labels } }. Online
+-- people come first, then by name.
 -- `store`: IdentityStore. `availability`: Availability (or nil: everyone "none").
 -- `options`:
 --   query        keep only people matching it the way /gf who does (character

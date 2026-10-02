@@ -443,6 +443,9 @@ function Core:UpdateGuild()
         addon.identity.RegisterCallback(self, "IdentityChanged", "RefreshMainPanel")
         addon.guildSettings.RegisterCallback(self, "GuildSettingsChanged", "RefreshMainPanel")
         addon.availability.RegisterCallback(self, "AvailabilityChanged", "OnAvailabilityChanged")
+        -- What people help with is on their profile, and a profile change that
+        -- doesn't touch names fires no IdentityChanged.
+        addon.profiles.RegisterCallback(self, "ProfileChanged", "RefreshMainPanel")
         self:RegisterEvent("GUILD_ROSTER_UPDATE", "OnGuildRosterUpdate")
         self.roster:Request()
     else

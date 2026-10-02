@@ -716,6 +716,29 @@ describe("Core", function()
             assert.are.equal("Dresden · offline · Helps with: Tanking, Healing", headline)
         end)
 
+        it("updates an open Guild Roster when someone's topics arrive", function()
+            local alt = client("Malgen Zelwindran")
+            local friend = client("Kira")
+            friend.ns.Core:HandleCommand("roster")
+            local function headline()
+                local frame
+                for _, widget in ipairs(friend.log.AceGUI.created) do
+                    if widget.kind == "Frame" and widget.title == "Guild Roster" then
+                        frame = widget
+                    end
+                end
+                for _, child in ipairs(frame.children[1].children) do
+                    if tostring(child.text):find("^Dresden") then
+                        return child.text
+                    end
+                end
+            end
+            assert.are.equal("Dresden · offline", headline())
+            alt.options.helps.set(nil, "quests", true)
+            deliver(alt, friend)
+            assert.are.equal("Dresden · offline · Helps with: Quests", headline())
+        end)
+
         it("disables the helping checkboxes outside a guild", function()
             local _, log = boot({ units = { player = { name = "Nobody", player = true } } })
             local helps = log.options.registered.table.args.myProfile.args.helps

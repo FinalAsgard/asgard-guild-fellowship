@@ -89,9 +89,9 @@ end
 --              that can fill it (nil: any)
 --   profileOf  personId -> profile or nil, for what they help with
 --   helps      a Helping topic: only people who help with it (nil: any)
--- Each entry also carries `helps` (topic labels) and each character `roles`. Only people with a character online are
--- listed; the player is left out, and people who set Busy are too unless showBusy
--- (or the status filter asks for Busy).
+-- Each entry also carries `helps` (topic labels) and each character `roles`.
+-- Only people with a character online are listed; the player is left out, and
+-- people who set Busy are too unless showBusy (or the status filter asks for Busy).
 function Discovery.Build(store, availability, me, options)
     options = options or {}
     local range = options.range or Discovery.LEVEL_RANGE
