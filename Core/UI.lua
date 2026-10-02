@@ -43,12 +43,26 @@ function Window:Show()
     self:Refresh()
 end
 
--- Rebuilds the content with `render`, if the window is open.
+-- Rebuilds the content with `render`, if the window is open. Skipped while the
+-- player is typing in one of its text boxes: rebuilding would wipe what they
+-- typed and drop focus, sending their next keys to the game's key bindings.
+-- The next refresh after they press Enter (or leave the box) catches up.
 function Window:Refresh()
-    if self.content and self.options.render then
+    if self.content and self.options.render and not self:IsTyping() then
+        self.inputs = {}
         self.content:ReleaseChildren()
         self.options.render(self)
     end
+end
+
+-- Whether one of this window's text boxes has keyboard focus.
+function Window:IsTyping()
+    for _, input in ipairs(self.inputs or {}) do
+        if input.editbox and input.editbox:HasFocus() then
+            return true
+        end
+    end
+    return false
 end
 
 function Window:Hide()
@@ -131,15 +145,18 @@ function Window:AddCheckBox(label, checked, onChange)
 end
 
 -- A labelled one-line text box. `onChange(text)` runs when the player presses
--- Enter or the Okay button.
+-- Enter or the Okay button; the box gives up focus first, so a redraw that
+-- follows isn't held back by Refresh's typing check.
 function Window:AddInput(label, text, onChange)
     local input = aceGUI():Create("EditBox")
     input:SetLabel(label)
     input:SetText(text or "")
     input:SetCallback("OnEnterPressed", function(_, _, value)
+        input:ClearFocus()
         onChange(value)
     end)
     self.content:AddChild(input)
+    table.insert(self.inputs, input)
 end
 
 local Prompt = {}

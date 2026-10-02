@@ -1107,6 +1107,27 @@ describe("Core", function()
             assert.are.equal(8, #texts(c))
         end)
 
+        it("doesn't redraw under the player while they type a search", function()
+            local c = client("Kira")
+            c.ns.Core:HandleCommand("roster")
+            local _, controls = texts(c)
+            local search = controls["Search (name or alias)"]
+            search.editbox = { focused = true, HasFocus = function(self) return self.focused end }
+            c.harness.options.roster = { ROSTER[1], ROSTER[2], ROSTER[3], { name = "Olaf", guid = "G-O",
+                note = "", online = true, level = 12, className = "Rogue" } }
+            c.ns.Core[c.log.addon.events.GUILD_ROSTER_UPDATE](c.ns.Core, "GUILD_ROSTER_UPDATE", false)
+            c.harness:advance(1)
+            local lines
+            lines, controls = texts(c)
+            assert.are.equal(search, controls["Search (name or alias)"])
+            assert.are.equal("Heading:2 of 3 people online (2 characters)", lines[1])
+            search.callbacks.OnEnterPressed(search, "OnEnterPressed", "olaf")
+            c.harness:advance(0)
+            lines = texts(c)
+            assert.are.same({ "Heading:3 of 3 people online (3 characters)", "Label:Olaf · online as Olaf",
+                "Label:    Olaf — Rogue 12 (main)", "Button:Whisper Olaf" }, lines)
+        end)
+
         it("remembers whether to show offline people", function()
             local c = client("Kira")
             c.ns.Core:HandleCommand("roster")
