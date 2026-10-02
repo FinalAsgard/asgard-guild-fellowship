@@ -282,6 +282,61 @@ describe("Compat", function()
             assert.are.same({ tank = false, heal = false }, retail.ClassRoles(nil))
         end)
 
+        it("opens a pre-addressed whisper without the realm on Forever", function()
+            local told
+            local tell = function(name) told = name end
+            assert.is_true(loadCompat({ client = "Forever", globals = { ChatFrame_SendTell = tell } })
+                .OpenWhisper("Malgen Zelwindran-Forever"))
+            assert.are.equal("Malgen Zelwindran", told)
+            assert.is_true(loadCompat({ client = "Retail", globals = { ChatFrameUtil = { SendTell = tell } } })
+                .OpenWhisper("Kira-Stormrage"))
+            assert.are.equal("Kira-Stormrage", told)
+            assert.is_false(loadCompat({ client = "Retail", globals = { ChatFrame_SendTell = false } })
+                .OpenWhisper("Kira-Stormrage"))
+        end)
+
+        it("shows a radio menu through the Retail context-menu API", function()
+            local built = {}
+            local root = {
+                CreateTitle = function(_, text) table.insert(built, "title:" .. text) end,
+                CreateRadio = function(_, text, isSelected, onSelect)
+                    table.insert(built, { text = text, selected = isSelected(), onSelect = onSelect })
+                end,
+            }
+            local chose
+            local Compat = loadCompat({ client = "Retail", globals = { MenuUtil = {
+                CreateContextMenu = function(anchor, generator)
+                    assert.are.equal("anchor", anchor)
+                    generator(nil, root)
+                end } } })
+            assert.is_true(Compat.ShowMenu("anchor", "Pick", {
+                { text = "A", checked = true, func = function() chose = "A" end },
+                { text = "B", checked = false, func = function() chose = "B" end },
+            }))
+            assert.are.equal("title:Pick", built[1])
+            assert.are.equal("A", built[2].text)
+            assert.is_true(built[2].selected)
+            assert.is_false(built[3].selected)
+            built[3].onSelect()
+            assert.are.equal("B", chose)
+        end)
+
+        it("falls back to the classic dropdown menu, or reports no menu", function()
+            local shown
+            local Compat = loadCompat({ client = "Forever", globals = {
+                MenuUtil = false,
+                CreateFrame = function() return {} end,
+                UIParent = {},
+                EasyMenu = function(list, frame, anchor) shown = { list = list, frame = frame, anchor = anchor } end,
+            } })
+            local func = function() end
+            assert.is_true(Compat.ShowMenu("anchor", "Pick", { { text = "A", checked = true, func = func } }))
+            assert.are.equal("cursor", shown.anchor)
+            assert.are.same({ text = "Pick", isTitle = true, notCheckable = true }, shown.list[1])
+            assert.are.same({ text = "A", checked = true, func = func }, shown.list[2])
+            assert.is_false(loadCompat({ globals = { MenuUtil = false, EasyMenu = false } }).ShowMenu("a", "t", {}))
+        end)
+
         it("reads the name from a has-joined-the-guild message", function()
             local Compat = loadCompat({ globals = { ERR_GUILD_JOIN_S = "%s has joined the guild." } })
             assert.are.equal("Mike Newman", Compat.JoinedGuildName("Mike Newman has joined the guild."))

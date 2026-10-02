@@ -21,8 +21,8 @@ local DB_DEFAULTS = {
         greet = { enabled = false, welcomeNew = true, prompt = {} },
         -- share: whether guildmates see what this player is up for.
         availability = { share = true },
-        -- Discovery's filters: status and role are nil for "any".
-        discovery = { sameZone = false, showBusy = false },
+        -- Discovery's filters (status and role are nil for "any") and level range.
+        discovery = { sameZone = false, showBusy = false, range = addon.Discovery.LEVEL_RANGE },
     },
 }
 local LAUNCHER_ICON = "Interface\\Icons\\Achievement_GuildPerk_EverybodysFriend"
@@ -81,6 +81,9 @@ function Core:OnInitialize()
         end,
         GreetToggled = function()
             self.greeter:Reset()
+        end,
+        DiscoveryChanged = function()
+            self.mainPanel:Refresh()
         end,
     })
     self.greeter = addon.Greeter.New({
@@ -365,12 +368,17 @@ function Core:CreateLauncher()
         type = "launcher",
         text = addon.Options.TITLE,
         icon = LAUNCHER_ICON,
-        OnClick = function()
-            self.mainPanel:Toggle()
+        OnClick = function(frame, button)
+            if button == "RightButton" then
+                self:ShowStatusMenu(frame)
+            else
+                self.mainPanel:Toggle()
+            end
         end,
         OnTooltipShow = function(tooltip)
             tooltip:AddLine(addon.Options.TITLE)
             tooltip:AddLine("Click to open or close.", 1, 1, 1)
+            tooltip:AddLine("Right-click to set what you're up for.", 1, 1, 1)
         end,
     })
     LibStub("LibDBIcon-1.0"):Register(addonName, launcher, self.db.profile.minimap)
@@ -511,6 +519,7 @@ function Core:RenderDiscovery(window)
     end
     local filters = self.db.profile.discovery
     local people = addon.Discovery.Build(store, addon.availability, { personId = person.id, level = info.level }, {
+        range = filters.range,
         maxLevel = addon.Compat.MaxLevel(),
         rolesOf = addon.Compat.ClassRoles,
         showBusy = filters.showBusy,
@@ -519,6 +528,12 @@ function Core:RenderDiscovery(window)
         role = filters.role,
     })
     window:AddHeading(("Discovery (%d)"):format(#people))
+    window:AddDropdown("My status", self:StatusChoices(), addon.availability:Get(person.id), function(value)
+        -- Redraw on the next frame, so the dropdown isn't released inside its own callback.
+        C_Timer.After(0, function()
+            self:SetStatus(value)
+        end)
+    end)
     self:RenderDiscoveryFilters(window, filters)
     if #people == 0 then
         local filtered = filters.status or filters.role or filters.sameZone
@@ -530,6 +545,43 @@ function Core:RenderDiscovery(window)
         for index, line in ipairs(addon.Discovery.Lines(entry)) do
             window:AddText(line, index > 1 and { 0.7, 0.7, 0.7 } or nil)
         end
+        local target = entry.character.key
+        window:AddButton("Whisper " .. entry.character.name, function()
+            addon.Compat.OpenWhisper(target)
+        end)
+    end
+end
+
+-- The statuses as { value, text } choices, "none" (Clear) last.
+function Core.StatusChoices()
+    local choices = {}
+    for _, status in ipairs(addon.Availability.STATUSES) do
+        table.insert(choices, { value = status, text = addon.Availability.LABELS[status] })
+    end
+    table.insert(choices, { value = "none", text = "Clear" })
+    return choices
+end
+
+-- The status menu on the minimap button's right-click.
+function Core:ShowStatusMenu(anchor)
+    if not addon.availability then
+        self:Print("Availability works once you're in a guild.")
+        return
+    end
+    local person = addon.identity:GetPerson(self:PlayerKey())
+    local current = addon.availability:Get(person and person.id)
+    local items = {}
+    for _, choice in ipairs(self:StatusChoices()) do
+        table.insert(items, {
+            text = choice.text,
+            checked = choice.value == current,
+            func = function()
+                self:SetStatus(choice.value)
+            end,
+        })
+    end
+    if not addon.Compat.ShowMenu(anchor, "What are you up for?", items) then
+        self:Print("Use /fellowship status to set what you're up for.")
     end
 end
 
