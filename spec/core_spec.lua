@@ -76,9 +76,9 @@ describe("Core", function()
         it("prints usage for an unknown command", function()
             local ns, log = boot()
             ns.Core:HandleCommand("dance")
-            assert.are.equal(5, #log.addon.printed)
+            assert.are.equal(6, #log.addon.printed)
             assert.are.equal("/fellowship status <questing|dungeons|pvp|helping|anything|busy|clear> sets what "
-                .. "you're up for.", log.addon.printed[5])
+                .. "you're up for.", log.addon.printed[6])
             assert.is_false(ns.Core.mainPanel:IsShown())
         end)
     end)
@@ -804,7 +804,7 @@ describe("Core", function()
             -- Text only: the filter widgets come back separately, by label.
             local result, controls = {}, {}
             for _, child in ipairs(scroll.children) do
-                if child.text == "Open Note Helper" then
+                if child.text == "Open Guild Roster" then
                     break
                 end
                 if child.label then
@@ -982,6 +982,207 @@ describe("Core", function()
             friend.ns.Core[friend.log.addon.events.GUILD_ROSTER_UPDATE](friend.ns.Core, "GUILD_ROSTER_UPDATE", true)
             friend.harness:advance(1)
             assert.are.equal("none", friend.ns.availability:Get("G-D"))
+        end)
+    end)
+
+    describe("Guild Roster", function()
+        local ROSTER = {
+            { name = "Dresden Zelwindran", guid = "G-D", note = "", online = false, level = 60, className = "Mage" },
+            { name = "Malgen Zelwindran", guid = "G-M", note = ">Dresden", online = true, level = 30,
+                className = "Warrior", zone = "Duskwood" },
+            { name = "Kira", guid = "G-K", note = "", online = true, level = 33, className = "Priest" },
+            { name = "Olaf", guid = "G-O", note = "", online = false, level = 12, className = "Rogue" },
+        }
+
+        local function client(name)
+            local ns, log, harness = boot({
+                client = "Forever", guild = { name = "Asgard" }, roster = ROSTER,
+                units = { player = { name = name, player = true } },
+            })
+            ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", false)
+            harness:advance(1)
+            return { name = name, ns = ns, log = log, harness = harness }
+        end
+
+        -- The open Guild Roster window's lines, or nil when it isn't open.
+        local function texts(c)
+            local frame
+            for _, widget in ipairs(c.log.AceGUI.created) do
+                if widget.kind == "Frame" and widget.title == "Guild Roster" then
+                    frame = widget
+                end
+            end
+            if not frame or not c.ns.Core.rosterWindow:IsShown() then
+                return nil
+            end
+            -- Text and buttons; the search box and checkbox come back separately.
+            local result, controls = {}, {}
+            for _, child in ipairs(frame.children[1].children) do
+                if child.label then
+                    controls[child.label] = child
+                else
+                    table.insert(result, child.kind .. ":" .. tostring(child.text))
+                end
+            end
+            return result, controls
+        end
+
+        it("opens from /fellowship roster, listing the guild by person", function()
+            local c = client("Kira")
+            assert.is_nil(texts(c))
+            c.ns.Core:HandleCommand("roster")
+            assert.are.same({
+                "Heading:2 of 3 people online (2 characters)",
+                "Label:Dresden · online as Malgen Zelwindran (Duskwood)",
+                "Label:    Dresden Zelwindran — Mage 60 (main, offline) · Malgen Zelwindran — Warrior 30",
+                "Button:Whisper Malgen Zelwindran",
+                "Label:Kira · online as Kira",
+                "Label:    Kira — Priest 33 (main)",
+                "Label:Olaf · offline",
+                "Label:    Olaf — Rogue 12 (main)",
+            }, texts(c))
+        end)
+
+        it("opens from the main panel's button", function()
+            local c = client("Kira")
+            c.ns.Core:HandleCommand("")
+            local button
+            for _, widget in ipairs(c.log.AceGUI.created) do
+                if widget.kind == "Button" and widget.text == "Open Guild Roster" then
+                    button = widget
+                end
+            end
+            assert.is_false(button.disabled)
+            button.callbacks.OnClick()
+            assert.are.equal("Heading:2 of 3 people online (2 characters)", texts(c)[1])
+        end)
+
+        it("updates live on roster changes and synced statuses", function()
+            local alt = client("Malgen Zelwindran")
+            local friend = client("Kira")
+            friend.ns.Core:HandleCommand("roster")
+            alt.ns.Core:HandleCommand("status pvp")
+            for _, message in ipairs(alt.log.addon.sent) do
+                friend.ns.Core:OnCommReceived(message.prefix, message.message, message.distribution, alt.name)
+            end
+            assert.are.equal("Label:Dresden · online as Malgen Zelwindran (Duskwood) · Up for PvP", texts(friend)[2])
+            friend.harness.options.roster = { ROSTER[1], ROSTER[2], ROSTER[3], { name = "Olaf", guid = "G-O",
+                note = "", online = true, level = 12, className = "Rogue", zone = "Mulgore" } }
+            friend.ns.Core[friend.log.addon.events.GUILD_ROSTER_UPDATE](friend.ns.Core, "GUILD_ROSTER_UPDATE", false)
+            friend.harness:advance(1)
+            assert.are.equal("Heading:3 of 3 people online (3 characters)", texts(friend)[1])
+            assert.are.equal("Label:Olaf · online as Olaf (Mulgore)", texts(friend)[7])
+        end)
+
+        it("searches on Enter, says when nothing matches, and clears the search", function()
+            local c = client("Kira")
+            c.ns.Core:HandleCommand("roster")
+            local _, controls = texts(c)
+            local search = controls["Search (name or alias)"]
+            assert.are.equal("", search.text)
+            search.callbacks.OnEnterPressed(search, "OnEnterPressed", "malgen")
+            c.harness:advance(0)
+            local lines
+            lines, controls = texts(c)
+            assert.are.same({
+                "Heading:2 of 3 people online (2 characters)",
+                "Label:Dresden · online as Malgen Zelwindran (Duskwood)",
+                "Label:    Dresden Zelwindran — Mage 60 (main, offline) · Malgen Zelwindran — Warrior 30",
+                "Button:Whisper Malgen Zelwindran",
+            }, lines)
+            assert.are.equal("malgen", controls["Search (name or alias)"].text)
+            controls["Search (name or alias)"].callbacks.OnEnterPressed(search, "OnEnterPressed", "nobody")
+            c.harness:advance(0)
+            lines = texts(c)
+            assert.are.same({ "Heading:2 of 3 people online (2 characters)", 'Label:Nobody matches "nobody".',
+                "Button:Clear search" }, lines)
+            local clear
+            for _, widget in ipairs(c.log.AceGUI.created) do
+                if widget.kind == "Button" and widget.text == "Clear search" then
+                    clear = widget
+                end
+            end
+            clear.callbacks.OnClick()
+            c.harness:advance(0)
+            assert.are.equal(8, #texts(c))
+        end)
+
+        it("doesn't redraw under the player while they type a search", function()
+            local c = client("Kira")
+            c.ns.Core:HandleCommand("roster")
+            local _, controls = texts(c)
+            local search = controls["Search (name or alias)"]
+            search.editbox = { focused = true, HasFocus = function(self) return self.focused end }
+            c.harness.options.roster = { ROSTER[1], ROSTER[2], ROSTER[3], { name = "Olaf", guid = "G-O",
+                note = "", online = true, level = 12, className = "Rogue" } }
+            c.ns.Core[c.log.addon.events.GUILD_ROSTER_UPDATE](c.ns.Core, "GUILD_ROSTER_UPDATE", false)
+            c.harness:advance(1)
+            local lines
+            lines, controls = texts(c)
+            assert.are.equal(search, controls["Search (name or alias)"])
+            assert.are.equal("Heading:2 of 3 people online (2 characters)", lines[1])
+            search.callbacks.OnEnterPressed(search, "OnEnterPressed", "olaf")
+            c.harness:advance(0)
+            lines = texts(c)
+            assert.are.same({ "Heading:3 of 3 people online (3 characters)", "Label:Olaf · online as Olaf",
+                "Label:    Olaf — Rogue 12 (main)", "Button:Whisper Olaf" }, lines)
+        end)
+
+        it("remembers whether to show offline people", function()
+            local c = client("Kira")
+            c.ns.Core:HandleCommand("roster")
+            local _, controls = texts(c)
+            local toggle = controls["Show offline people"]
+            assert.is_true(toggle.value)
+            toggle.callbacks.OnValueChanged(toggle, "OnValueChanged", false)
+            c.harness:advance(0)
+            assert.is_false(c.ns.Core.db.profile.roster.showOffline)
+            local lines
+            lines, controls = texts(c)
+            assert.is_false(controls["Show offline people"].value)
+            assert.are.equal("Heading:2 of 3 people online (2 characters)", lines[1])
+            for _, line in ipairs(lines) do
+                assert.is_nil(line:find("Olaf", 1, true))
+            end
+        end)
+
+        it("whispers an online person without sending anything, and not yourself", function()
+            local told = {}
+            local ns, log, harness = boot({
+                client = "Forever", guild = { name = "Asgard" }, roster = ROSTER,
+                units = { player = { name = "Kira", player = true } },
+                globals = { ChatFrame_SendTell = function(name) table.insert(told, name) end,
+                    SendChatMessage = function() error("nothing may be sent") end },
+            })
+            ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", false)
+            harness:advance(1)
+            ns.Core:HandleCommand("roster")
+            local c = { ns = ns, log = log }
+            local lines = texts(c)
+            local whispers = {}
+            for _, line in ipairs(lines) do
+                if line:find("^Button:Whisper") then
+                    table.insert(whispers, line)
+                end
+            end
+            assert.are.same({ "Button:Whisper Malgen Zelwindran" }, whispers)
+            for _, widget in ipairs(log.AceGUI.created) do
+                if widget.kind == "Button" and widget.text == "Whisper Malgen Zelwindran" then
+                    widget.callbacks.OnClick()
+                end
+            end
+            assert.are.same({ "Malgen Zelwindran" }, told)
+            assert.are.same({}, log.addon.sent)
+        end)
+
+        it("explains itself outside a guild and lists the command in usage", function()
+            local ns, log = boot({ units = { player = { name = "Nobody", player = true } } })
+            ns.Core:HandleCommand("roster")
+            assert.are.same({
+                "Label:The Guild Roster shows your guild once you're in a guild and the roster has loaded.",
+            }, texts({ ns = ns, log = log }))
+            ns.Core:HandleCommand("dance")
+            assert.are.equal("/fellowship roster opens the Guild Roster, grouped by person.", log.addon.printed[5])
         end)
     end)
 

@@ -136,6 +136,38 @@ describe("UI.Window", function()
             assert.are.equal("Drez", typed)
         end)
 
+        it("holds off redraws while the player is typing, and gives up focus on Enter", function()
+            local count, entered = 0, nil
+            local window, scroll = rendered(function(w)
+                count = count + 1
+                w:AddInput("Search", "", function(text) entered = text end)
+            end)
+            local input = scroll.children[1]
+            input.editbox = { focused = true, HasFocus = function(self) return self.focused end }
+            window:Refresh()
+            assert.are.equal(1, count)
+            assert.are.equal(input, scroll.children[1])
+            input.callbacks.OnEnterPressed(input, "OnEnterPressed", "zel")
+            assert.are.equal("zel", entered)
+            assert.is_true(input.focusCleared)
+            window:Refresh()
+            assert.are.equal(2, count)
+        end)
+
+        it("forgets its text boxes when closed, so a reused widget can't block reopening", function()
+            local count = 0
+            local window, scroll = rendered(function(w)
+                count = count + 1
+                w:AddInput("Search", "", function() end)
+            end)
+            local input = scroll.children[1]
+            window:Hide()
+            -- AceGUI hands the released box to some other window, where it gets focus.
+            input.editbox = { HasFocus = function() return true end }
+            window:Show()
+            assert.are.equal(2, count)
+        end)
+
         it("adds checkboxes that report changes", function()
             local checked
             local _, scroll = rendered(function(window)

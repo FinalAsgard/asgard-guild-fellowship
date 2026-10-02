@@ -18,6 +18,8 @@ See [`docs/identity.md`](docs/identity.md) for the note convention and how to us
 
 **Fellowship Discovery.** The main panel lists online guildmates you could play with. It includes alts within a few levels of yours, even offline ones, with tank and healer hints, filters, and a one-click whisper. Everyone can say what they're up for (questing, dungeons, PvP, helping, anything, busy) from the minimap button's right-click or `/gf status`. Statuses are shared with guildmates and clear themselves after 2 hours or at logoff. See [`docs/discovery.md`](docs/discovery.md).
 
+**Guild Roster.** `/gf roster` shows the whole guild grouped by person: who's online and on which character, every alt with class and level, aliases and statuses. It has search and a show-offline toggle. See [`docs/roster.md`](docs/roster.md).
+
 ## Supported clients
 
 | Client | Manifest | Interface |
