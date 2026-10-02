@@ -51,6 +51,10 @@ function WhoFormatter.Lines(query, persons, infoFor, profileFor)
         if profile and profile.bio then
             table.insert(lines, "  Bio: " .. profile.bio)
         end
+        local helps = profile and addon.Helping.Labels(profile.helps) or {}
+        if #helps > 0 then
+            table.insert(lines, "  Helps with: " .. table.concat(helps, ", "))
+        end
     end
     return lines
 end

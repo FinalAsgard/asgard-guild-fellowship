@@ -7,6 +7,7 @@ local function load()
         "Core/NoteCodec.lua",
         "Core/IdentityResolver.lua",
         "Core/IdentityStore.lua",
+        "Core/Helping.lua",
         "Core/WhoFormatter.lua",
     })
 end

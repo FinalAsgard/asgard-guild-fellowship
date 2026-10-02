@@ -241,6 +241,39 @@ local function myProfileGroup(guild)
             end,
         }
     end
+    local topics = {}
+    for _, topic in ipairs(addon.Helping.TOPICS) do
+        topics[topic] = addon.Helping.LABELS[topic]
+    end
+    args.helps = {
+        type = "multiselect",
+        name = "I can help with",
+        desc = "Tick what you're happy to help guildmates with. They can find you by it in the Guild Roster "
+            .. "and Discovery.",
+        order = #PROFILE_FIELDS + 2,
+        values = topics,
+        sorting = addon.Helping.TOPICS,
+        disabled = function()
+            return guild.MyProfile() == nil
+        end,
+        get = function(_, topic)
+            local profile = guild.MyProfile()
+            return profile ~= nil and addon.Helping.Has(profile.helps, topic)
+        end,
+        set = function(_, topic, checked)
+            local profile = guild.MyProfile() or {}
+            local chosen = {}
+            for _, known in ipairs(addon.Helping.Parse(profile.helps)) do
+                if known ~= topic then
+                    table.insert(chosen, known)
+                end
+            end
+            if checked then
+                table.insert(chosen, topic)
+            end
+            guild.SaveProfile({ helps = addon.Helping.Format(chosen) })
+        end,
+    }
     return { type = "group", name = "My profile", inline = true, order = 2, args = args }
 end
 

@@ -443,6 +443,9 @@ function Core:UpdateGuild()
         addon.identity.RegisterCallback(self, "IdentityChanged", "RefreshMainPanel")
         addon.guildSettings.RegisterCallback(self, "GuildSettingsChanged", "RefreshMainPanel")
         addon.availability.RegisterCallback(self, "AvailabilityChanged", "OnAvailabilityChanged")
+        -- What people help with is on their profile, and a profile change that
+        -- doesn't touch names fires no IdentityChanged.
+        addon.profiles.RegisterCallback(self, "ProfileChanged", "RefreshMainPanel")
         self:RegisterEvent("GUILD_ROSTER_UPDATE", "OnGuildRosterUpdate")
         self.roster:Request()
     else
@@ -573,6 +576,8 @@ function Core:RenderDiscovery(window)
         status = filters.status,
         zone = filters.sameZone and (info.zone or "") or nil,
         role = filters.role,
+        helps = filters.helps,
+        profileOf = Core.ProfileOf,
     })
     window:AddHeading(("Discovery (%d)"):format(#people))
     window:AddDropdown("My status", self:StatusChoices(), addon.availability:Get(person.id), function(value)
@@ -583,7 +588,7 @@ function Core:RenderDiscovery(window)
     end)
     self:RenderDiscoveryFilters(window, filters)
     if #people == 0 then
-        local filtered = filters.status or filters.role or filters.sameZone
+        local filtered = filters.status or filters.role or filters.sameZone or filters.helps
         window:AddText(filtered and "Nobody online matches these filters right now."
             or "Nobody else is online who's free to play right now.")
         return
@@ -606,7 +611,7 @@ function Core:RenderRoster(window)
     local settings = self.db.profile.roster
     local query = self.rosterQuery or ""
     local roster = store and addon.RosterView.Build(store, addon.availability,
-        { query = query, showOffline = settings.showOffline })
+        { query = query, showOffline = settings.showOffline, helps = self.rosterHelps, profileOf = Core.ProfileOf })
     if not roster or roster.totalPeople == 0 then
         window:AddText("The Guild Roster shows your guild once you're in a guild and the roster has loaded.")
         return
@@ -623,6 +628,10 @@ function Core:RenderRoster(window)
         self.rosterQuery = text
         redraw()
     end)
+    window:AddDropdown("Can help with", Core.HelpChoices(), self.rosterHelps or "any", function(value)
+        self.rosterHelps = value ~= "any" and value or nil
+        redraw()
+    end)
     window:AddCheckBox("Show offline people", settings.showOffline, function(value)
         settings.showOffline = value
         redraw()
@@ -634,6 +643,9 @@ function Core:RenderRoster(window)
                 self.rosterQuery = nil
                 redraw()
             end)
+        elseif self.rosterHelps then
+            window:AddText(("Nobody has said they can help with %s yet."):format(
+                addon.Helping.LABELS[self.rosterHelps]))
         else
             window:AddText("Nobody is online right now.")
         end
@@ -651,6 +663,20 @@ function Core:RenderRoster(window)
             end)
         end
     end
+end
+
+-- A person's synced profile, or nil.
+function Core.ProfileOf(personId)
+    return addon.profiles and addon.profiles:Get(personId)
+end
+
+-- The helping topics as { value, text } choices, "any" (Anyone) first.
+function Core.HelpChoices()
+    local choices = { { value = "any", text = "Anyone" } }
+    for _, topic in ipairs(addon.Helping.TOPICS) do
+        table.insert(choices, { value = topic, text = addon.Helping.LABELS[topic] })
+    end
+    return choices
 end
 
 -- The statuses as { value, text } choices, "none" (Clear) last.
@@ -708,6 +734,9 @@ function Core:RenderDiscoveryFilters(window, filters)
         { value = "heal", text = "Healer" },
     }, filters.role or "any", function(value)
         changed("role", value ~= "any" and value or nil)
+    end)
+    window:AddDropdown("Can help with", Core.HelpChoices(), filters.helps or "any", function(value)
+        changed("helps", value ~= "any" and value or nil)
     end)
     window:AddCheckBox("Same zone as me", filters.sameZone, function(value)
         changed("sameZone", value)

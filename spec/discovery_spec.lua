@@ -34,6 +34,7 @@ local function load()
         "Core/IdentityStore.lua",
         "Core/Availability.lua",
         "Core/SyncMerge.lua",
+        "Core/Helping.lua",
         "Core/Discovery.lua",
     })
 end
@@ -192,6 +193,32 @@ describe("Discovery filters and roles", function()
         assert.are.same({ "Bea" }, names(ns.Discovery.Build(store, availability, ME, options)))
         options.zone = "Duskwood"
         assert.are.same({}, names(ns.Discovery.Build(store, availability, ME, options)))
+    end)
+end)
+
+describe("Discovery helping topics", function()
+    local function profileOf(personId)
+        return ({ ["G-Kira"] = { helps = "healing,mentoring" }, ["G-Zed"] = { helps = "healing" } })[personId]
+    end
+
+    it("keeps only people who help with the chosen topic, and shows their topics", function()
+        local ns, store, availability = setup()
+        local people = ns.Discovery.Build(store, availability, ME, { profileOf = profileOf, helps = "healing" })
+        assert.are.same({ "Kira", "Zed" }, names(people))
+        assert.are.same({ "Healing", "General mentoring" }, people[1].helps)
+        assert.are.equal("Kira — Kira, Priest 36 · Duskwood · Helps with: Healing, General mentoring",
+            ns.Discovery.Lines(people[1])[1])
+        assert.are.same({}, names(ns.Discovery.Build(store, availability, ME, { profileOf = profileOf,
+            helps = "pvp" })))
+    end)
+
+    it("still hides Busy helpers unless Busy is shown", function()
+        local ns, store, availability = setup()
+        availability:Set("Zed-Forever", "busy")
+        local options = { profileOf = profileOf, helps = "healing" }
+        assert.are.same({ "Kira" }, names(ns.Discovery.Build(store, availability, ME, options)))
+        options.showBusy = true
+        assert.are.same({ "Kira", "Zed" }, names(ns.Discovery.Build(store, availability, ME, options)))
     end)
 end)
 

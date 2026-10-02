@@ -690,6 +690,62 @@ describe("Core", function()
             }, friend.log.addon.printed)
         end)
 
+        it("shares what someone helps with, shown in /fellowship who and the Guild Roster", function()
+            local alt = client("Malgen Zelwindran")
+            local friend = client("Kira")
+            local helps = alt.options.helps
+            assert.is_false(helps.disabled())
+            assert.are.equal("Tanking", helps.values.tanking)
+            helps.set(nil, "healing", true)
+            helps.set(nil, "tanking", true)
+            helps.set(nil, "quests", true)
+            helps.set(nil, "quests", false)
+            assert.is_true(helps.get(nil, "tanking"))
+            assert.is_false(helps.get(nil, "quests"))
+            assert.are.equal("tanking,healing", alt.ns.profiles:Get("G-D").helps)
+            deliver(alt, friend)
+            friend.ns.Core:HandleCommand("who Malgen Zelwindran")
+            assert.are.equal("  Helps with: Tanking, Healing", friend.log.addon.printed[#friend.log.addon.printed])
+            friend.ns.Core:HandleCommand("roster")
+            local headline
+            for _, widget in ipairs(friend.log.AceGUI.created) do
+                if widget.kind == "Label" and tostring(widget.text):find("^Dresden") then
+                    headline = widget.text
+                end
+            end
+            assert.are.equal("Dresden · offline · Helps with: Tanking, Healing", headline)
+        end)
+
+        it("updates an open Guild Roster when someone's topics arrive", function()
+            local alt = client("Malgen Zelwindran")
+            local friend = client("Kira")
+            friend.ns.Core:HandleCommand("roster")
+            local function headline()
+                local frame
+                for _, widget in ipairs(friend.log.AceGUI.created) do
+                    if widget.kind == "Frame" and widget.title == "Guild Roster" then
+                        frame = widget
+                    end
+                end
+                for _, child in ipairs(frame.children[1].children) do
+                    if tostring(child.text):find("^Dresden") then
+                        return child.text
+                    end
+                end
+            end
+            assert.are.equal("Dresden · offline", headline())
+            alt.options.helps.set(nil, "quests", true)
+            deliver(alt, friend)
+            assert.are.equal("Dresden · offline · Helps with: Quests", headline())
+        end)
+
+        it("disables the helping checkboxes outside a guild", function()
+            local _, log = boot({ units = { player = { name = "Nobody", player = true } } })
+            local helps = log.options.registered.table.args.myProfile.args.helps
+            assert.is_true(helps.disabled())
+            assert.is_false(helps.get(nil, "tanking"))
+        end)
+
         it("ignores a profile someone sends for another person", function()
             local impostor = client("Kira")
             local victim = client("Malgen Zelwindran")
@@ -955,6 +1011,25 @@ describe("Core", function()
                 panel(alt))
         end)
 
+        it("filters Discovery by what people help with, saved with the other filters", function()
+            local alt = client("Malgen Zelwindran")
+            local friend = client("Kira")
+            alt.ns.Core:SaveProfile({ helps = "tanking" })
+            deliver(alt, friend)
+            friend.ns.Core:HandleCommand("")
+            local _, controls = panel(friend)
+            controls["Can help with"].callbacks.OnValueChanged(controls["Can help with"], "OnValueChanged", "tanking")
+            friend.harness:advance(0)
+            assert.are.equal("tanking", friend.ns.Core.db.profile.discovery.helps)
+            assert.are.equal("Label:Dresden — Malgen Zelwindran, Warrior 30 · Duskwood · Helps with: Tanking",
+                panel(friend)[2])
+            _, controls = panel(friend)
+            controls["Can help with"].callbacks.OnValueChanged(controls["Can help with"], "OnValueChanged", "healing")
+            friend.harness:advance(0)
+            assert.are.same({ "Heading:Discovery (0)", "Label:Nobody online matches these filters right now." },
+                panel(friend))
+        end)
+
         it("explains Discovery outside a guild", function()
             local ns, log = boot({ units = { player = { name = "Nobody", player = true } } })
             ns.Core:HandleCommand("")
@@ -1126,6 +1201,27 @@ describe("Core", function()
             lines = texts(c)
             assert.are.same({ "Heading:3 of 3 people online (3 characters)", "Label:Olaf · online as Olaf",
                 "Label:    Olaf — Rogue 12 (main)", "Button:Whisper Olaf" }, lines)
+        end)
+
+        it("filters by what people help with for the session, naming the topic when nobody does", function()
+            local c = client("Kira")
+            c.ns.profiles.data.profiles["G-O"] = { version = 1, author = "Olaf-Forever", helps = "quests" }
+            c.ns.Core:HandleCommand("roster")
+            local _, controls = texts(c)
+            local helps = controls["Can help with"]
+            assert.are.equal("any", helps.value)
+            assert.are.equal("Anyone", helps.list.any)
+            helps.callbacks.OnValueChanged(helps, "OnValueChanged", "quests")
+            c.harness:advance(0)
+            assert.are.same({ "Heading:2 of 3 people online (2 characters)",
+                "Label:Olaf · offline · Helps with: Quests",
+                "Label:    Olaf — Rogue 12 (main)" }, texts(c))
+            _, controls = texts(c)
+            controls["Can help with"].callbacks.OnValueChanged(controls["Can help with"], "OnValueChanged", "pvp")
+            c.harness:advance(0)
+            assert.are.same({ "Heading:2 of 3 people online (2 characters)",
+                "Label:Nobody has said they can help with PvP yet." }, texts(c))
+            assert.is_nil(c.ns.Core.db.profile.roster.helps)
         end)
 
         it("remembers whether to show offline people", function()

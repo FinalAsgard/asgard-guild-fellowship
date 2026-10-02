@@ -8,12 +8,15 @@ addon.RosterView = RosterView
 -- The roster: { people, onlinePeople, totalPeople, onlineCharacters }. Each
 -- person: { personId, name, alias, status, online, current (the character
 -- they're on, or nil), characters = { main first: { key, name, level, class,
--- className, online, zone, isMain } } }. Online people come first, then by name.
+-- className, online, zone, isMain } }, helps = { topic labels } }. Online
+-- people come first, then by name.
 -- `store`: IdentityStore. `availability`: Availability (or nil: everyone "none").
 -- `options`:
 --   query        keep only people matching it the way /gf who does (character
 --                name, Name-Realm, first name, or alias); empty keeps everyone
 --   showOffline  false hides people with no character online (default true)
+--   profileOf    personId -> profile or nil, for what they help with (`helps`)
+--   helps        a Helping topic: only people who help with it (nil: any)
 -- The counts always describe the whole guild, whatever the options keep.
 function RosterView.Build(store, availability, options)
     options = options or {}
@@ -56,8 +59,11 @@ function RosterView.Build(store, availability, options)
             end
             totalPeople = totalPeople + 1
         end
+        local profile = options.profileOf and options.profileOf(personId)
+        local helps = profile and profile.helps
         if #characters > 0 and (not matches or matches[personId])
-            and (current or options.showOffline ~= false) then
+            and (current or options.showOffline ~= false)
+            and (not options.helps or addon.Helping.Has(helps, options.helps)) then
             table.insert(people, {
                 personId = personId,
                 name = store:GetDisplayName(personId) or characters[1].name,
@@ -66,6 +72,7 @@ function RosterView.Build(store, availability, options)
                 online = current ~= nil,
                 current = current,
                 characters = characters,
+                helps = addon.Helping.Labels(helps),
             })
         end
     end
@@ -108,6 +115,9 @@ function RosterView.Lines(entry)
     if entry.status ~= "none" then
         local label = addon.Availability.LABELS[entry.status]
         table.insert(headline, entry.status == "busy" and label or ("Up for " .. label))
+    end
+    if entry.helps and #entry.helps > 0 then
+        table.insert(headline, "Helps with: " .. table.concat(entry.helps, ", "))
     end
     local characters = {}
     for _, char in ipairs(entry.characters) do

@@ -2,7 +2,7 @@ local _, addon = ...
 
 -- Each person's synced profile, keyed by person ID (the main's GUID) and kept
 -- per guild in `guildData.profiles`:
---   { discord?, aliasFallback?, bio?, version = number, author = charKey,
+--   { discord?, aliasFallback?, bio?, helps?, version = number, author = charKey,
 --     clearedBy?, cleared? }
 -- `discord` is contact info only: it is shown labelled as Discord and is never a
 -- display name, tag, search key, or alias.
@@ -17,9 +17,10 @@ local Profiles = {}
 Profiles.__index = Profiles
 addon.Profiles = Profiles
 
-Profiles.FIELDS = { "discord", "aliasFallback", "bio" }
+-- `helps`: the topics the person is willing to help with (see Helping).
+Profiles.FIELDS = { "discord", "aliasFallback", "bio", "helps" }
 -- Maximum length of each field, in bytes.
-Profiles.LIMITS = { discord = 32, aliasFallback = 24, bio = 200 }
+Profiles.LIMITS = { discord = 32, aliasFallback = 24, bio = 200, helps = 120 }
 -- Fields an officer may clear.
 Profiles.CLEARABLE = { bio = true, aliasFallback = true }
 
@@ -64,7 +65,7 @@ function Profiles:Changed(personId)
     self.callbacks:Fire("ProfileChanged", personId)
 end
 
--- Saves `fields` (any of discord, aliasFallback, bio; "" clears one) to the
+-- Saves `fields` (any of discord, aliasFallback, bio, helps; "" clears one) to the
 -- profile of whoever `charKey` is. Returns true, or false and a reason
 -- ("unknown character" or "<field> is too long").
 function Profiles:Save(charKey, fields)

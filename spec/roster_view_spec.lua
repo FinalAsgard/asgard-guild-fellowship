@@ -31,6 +31,7 @@ local function setup(snapshot)
         "Core/IdentityResolver.lua",
         "Core/IdentityStore.lua",
         "Core/Availability.lua",
+        "Core/Helping.lua",
         "Core/RosterView.lua",
     })
     local store = ns.IdentityStore.New({})
@@ -112,6 +113,34 @@ describe("RosterView options", function()
         local searched = ns.RosterView.Build(store, availability, { query = "bob", showOffline = false })
         assert.are.same({}, names(searched))
         assert.are.equal(3, searched.totalPeople)
+    end)
+end)
+
+describe("RosterView helping topics", function()
+    local PROFILES = { ["G-Dresden"] = { helps = "tanking,quests" }, ["G-Bob"] = { helps = "quests" } }
+    local function profileOf(personId)
+        return PROFILES[personId]
+    end
+
+    it("shows what each person helps with", function()
+        local ns, store, availability = setup()
+        local view = ns.RosterView.Build(store, availability, { profileOf = profileOf })
+        assert.are.same({ "Tanking", "Quests" }, view.people[1].helps)
+        assert.are.same({}, view.people[2].helps)
+        assert.are.equal("Final · online as Shiro (Elwynn Forest) · Helps with: Tanking, Quests",
+            ns.RosterView.Lines(view.people[1])[1])
+    end)
+
+    it("keeps only people who help with a topic, online or not, with whole-guild counts", function()
+        local ns, store, availability = setup()
+        local view = ns.RosterView.Build(store, availability, { profileOf = profileOf, helps = "quests" })
+        assert.are.same({ "Final", "Bob" }, names(view))
+        assert.are.equal(3, view.totalPeople)
+        local online = ns.RosterView.Build(store, availability,
+            { profileOf = profileOf, helps = "quests", showOffline = false })
+        assert.are.same({ "Final" }, names(online))
+        assert.are.same({}, names(ns.RosterView.Build(store, availability, { profileOf = profileOf, helps = "pvp" })))
+        assert.are.same({}, names(ns.RosterView.Build(store, availability, { helps = "quests" })))
     end)
 end)
 
