@@ -45,6 +45,7 @@ Slash commands: `/fellowship` and `/agf` always work. `/gf` works too unless ano
 | `/gf` | Opens the main panel |
 | `/gf who <name>` | Looks up a guildmate |
 | `/gf notes` | Opens the Note Helper |
+| `/gf roster` | Opens the Guild Roster: the whole guild grouped by person, online people first |
 | `/gf status <status\|clear>` | Sets or clears what you're up for (see [Discovery](discovery.md)) |
 | `/gf clear <bio\|alias> <name>` | Addon officers: clears someone's bio or profile alias |
 | `/gf version` | Prints the add-on version |

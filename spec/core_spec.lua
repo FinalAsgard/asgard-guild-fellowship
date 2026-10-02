@@ -76,9 +76,9 @@ describe("Core", function()
         it("prints usage for an unknown command", function()
             local ns, log = boot()
             ns.Core:HandleCommand("dance")
-            assert.are.equal(5, #log.addon.printed)
+            assert.are.equal(6, #log.addon.printed)
             assert.are.equal("/fellowship status <questing|dungeons|pvp|helping|anything|busy|clear> sets what "
-                .. "you're up for.", log.addon.printed[5])
+                .. "you're up for.", log.addon.printed[6])
             assert.is_false(ns.Core.mainPanel:IsShown())
         end)
     end)
@@ -804,7 +804,7 @@ describe("Core", function()
             -- Text only: the filter widgets come back separately, by label.
             local result, controls = {}, {}
             for _, child in ipairs(scroll.children) do
-                if child.text == "Open Note Helper" then
+                if child.text == "Open Guild Roster" then
                     break
                 end
                 if child.label then
@@ -982,6 +982,100 @@ describe("Core", function()
             friend.ns.Core[friend.log.addon.events.GUILD_ROSTER_UPDATE](friend.ns.Core, "GUILD_ROSTER_UPDATE", true)
             friend.harness:advance(1)
             assert.are.equal("none", friend.ns.availability:Get("G-D"))
+        end)
+    end)
+
+    describe("Guild Roster", function()
+        local ROSTER = {
+            { name = "Dresden Zelwindran", guid = "G-D", note = "", online = false, level = 60, className = "Mage" },
+            { name = "Malgen Zelwindran", guid = "G-M", note = ">Dresden", online = true, level = 30,
+                className = "Warrior", zone = "Duskwood" },
+            { name = "Kira", guid = "G-K", note = "", online = true, level = 33, className = "Priest" },
+            { name = "Olaf", guid = "G-O", note = "", online = false, level = 12, className = "Rogue" },
+        }
+
+        local function client(name)
+            local ns, log, harness = boot({
+                client = "Forever", guild = { name = "Asgard" }, roster = ROSTER,
+                units = { player = { name = name, player = true } },
+            })
+            ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", false)
+            harness:advance(1)
+            return { name = name, ns = ns, log = log, harness = harness }
+        end
+
+        -- The open Guild Roster window's lines, or nil when it isn't open.
+        local function texts(c)
+            local frame
+            for _, widget in ipairs(c.log.AceGUI.created) do
+                if widget.kind == "Frame" and widget.title == "Guild Roster" then
+                    frame = widget
+                end
+            end
+            if not frame or not c.ns.Core.rosterWindow:IsShown() then
+                return nil
+            end
+            local result = {}
+            for _, child in ipairs(frame.children[1].children) do
+                table.insert(result, child.kind .. ":" .. tostring(child.text))
+            end
+            return result
+        end
+
+        it("opens from /fellowship roster, listing the guild by person", function()
+            local c = client("Kira")
+            assert.is_nil(texts(c))
+            c.ns.Core:HandleCommand("roster")
+            assert.are.same({
+                "Heading:2 of 3 people online (2 characters)",
+                "Label:Dresden · online as Malgen Zelwindran (Duskwood)",
+                "Label:    Dresden Zelwindran — Mage 60 (main, offline) · Malgen Zelwindran — Warrior 30",
+                "Label:Kira · online as Kira",
+                "Label:    Kira — Priest 33 (main)",
+                "Label:Olaf · offline",
+                "Label:    Olaf — Rogue 12 (main)",
+            }, texts(c))
+        end)
+
+        it("opens from the main panel's button", function()
+            local c = client("Kira")
+            c.ns.Core:HandleCommand("")
+            local button
+            for _, widget in ipairs(c.log.AceGUI.created) do
+                if widget.kind == "Button" and widget.text == "Open Guild Roster" then
+                    button = widget
+                end
+            end
+            assert.is_false(button.disabled)
+            button.callbacks.OnClick()
+            assert.are.equal("Heading:2 of 3 people online (2 characters)", texts(c)[1])
+        end)
+
+        it("updates live on roster changes and synced statuses", function()
+            local alt = client("Malgen Zelwindran")
+            local friend = client("Kira")
+            friend.ns.Core:HandleCommand("roster")
+            alt.ns.Core:HandleCommand("status pvp")
+            for _, message in ipairs(alt.log.addon.sent) do
+                friend.ns.Core:OnCommReceived(message.prefix, message.message, message.distribution, alt.name)
+            end
+            assert.are.equal("Label:Dresden · online as Malgen Zelwindran (Duskwood) · Up for PvP", texts(friend)[2])
+            friend.harness.options.roster = { ROSTER[1], ROSTER[2], ROSTER[3], { name = "Olaf", guid = "G-O",
+                note = "", online = true, level = 12, className = "Rogue", zone = "Mulgore" } }
+            friend.ns.Core[friend.log.addon.events.GUILD_ROSTER_UPDATE](friend.ns.Core, "GUILD_ROSTER_UPDATE", false)
+            friend.harness:advance(1)
+            assert.are.equal("Heading:3 of 3 people online (3 characters)", texts(friend)[1])
+            assert.are.equal("Label:Olaf · online as Olaf (Mulgore)", texts(friend)[6])
+        end)
+
+        it("explains itself outside a guild and lists the command in usage", function()
+            local ns, log = boot({ units = { player = { name = "Nobody", player = true } } })
+            ns.Core:HandleCommand("roster")
+            assert.are.same({
+                "Label:The Guild Roster shows your guild once you're in a guild and the roster has loaded.",
+            }, texts({ ns = ns, log = log }))
+            ns.Core:HandleCommand("dance")
+            assert.are.equal("/fellowship roster opens the Guild Roster, grouped by person.", log.addon.printed[5])
         end)
     end)
 

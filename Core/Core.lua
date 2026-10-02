@@ -37,6 +37,14 @@ function Core:OnInitialize()
             self:RenderMainPanel(window)
         end,
     })
+    self.rosterWindow = addon.UI.Window({
+        title = "Guild Roster",
+        width = 560,
+        height = 500,
+        render = function(window)
+            Core.RenderRoster(window)
+        end,
+    })
     self.noteHelperState = { mode = "link" }
     self.noteHelper = addon.UI.Window({
         title = "Note Helper",
@@ -50,9 +58,11 @@ function Core:OnInitialize()
         if addon.identity then
             addon.identity:Update(snapshot)
             addon.availability:Prune()
-            -- Logins, levels, and zones feed Discovery, and a rank change can
-            -- turn officer tools on or off; neither fires IdentityChanged.
+            -- Logins, levels, and zones feed Discovery and the Guild Roster, and
+            -- a rank change can turn officer tools on or off; none of them
+            -- fires IdentityChanged.
             self.mainPanel:Refresh()
+            self.rosterWindow:Refresh()
             self.greeter:OnSnapshot(snapshot)
             -- Sync starts once there is a roster to compare against.
             self.sync:Start()
@@ -147,6 +157,9 @@ function Core:HandleCommand(input)
         notes = function()
             self:OpenNoteHelper()
         end,
+        roster = function()
+            self.rosterWindow:Show()
+        end,
         status = function(rest)
             self:StatusCommand(rest)
         end,
@@ -155,6 +168,7 @@ function Core:HandleCommand(input)
             self:Print("/fellowship who <name> looks up a guildmate by character name, first name, or alias.")
             self:Print("/fellowship clear <bio|alias> <name> (addon officers) clears someone's bio or alias.")
             self:Print("/fellowship notes opens the Note Helper for linking alts and setting aliases.")
+            self:Print("/fellowship roster opens the Guild Roster, grouped by person.")
             self:Print("/fellowship status <" .. table.concat(addon.Availability.STATUSES, "|")
                 .. "|clear> sets what you're up for.")
         end,
@@ -495,6 +509,7 @@ end
 function Core:RefreshMainPanel()
     self.mainPanel:Refresh()
     self.noteHelper:Refresh()
+    self.rosterWindow:Refresh()
 end
 
 -- The main panel: Discovery and the Note Helper for everyone, plus the
@@ -502,6 +517,9 @@ end
 function Core:RenderMainPanel(window)
     local store = addon.identity
     self:RenderDiscovery(window)
+    window:AddButton("Open Guild Roster", function()
+        self.rosterWindow:Show()
+    end, store == nil)
     window:AddButton("Open Note Helper", function()
         self:OpenNoteHelper()
     end, store == nil)
@@ -576,6 +594,22 @@ function Core:RenderDiscovery(window)
         window:AddButton("Whisper " .. entry.character.name, function()
             addon.Compat.OpenWhisper(target)
         end)
+    end
+end
+
+-- The Guild Roster: everyone in the guild, grouped by person.
+function Core.RenderRoster(window)
+    local store = addon.identity
+    local roster = store and addon.RosterView.Build(store, addon.availability)
+    if not roster or roster.totalPeople == 0 then
+        window:AddText("The Guild Roster shows your guild once you're in a guild and the roster has loaded.")
+        return
+    end
+    window:AddHeading(addon.RosterView.Summary(roster))
+    for _, entry in ipairs(roster.people) do
+        local lines = addon.RosterView.Lines(entry)
+        window:AddText(lines[1], not entry.online and { 0.6, 0.6, 0.6 } or nil)
+        window:AddText(lines[2], { 0.7, 0.7, 0.7 })
     end
 end
 
