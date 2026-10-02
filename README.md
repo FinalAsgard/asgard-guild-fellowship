@@ -20,6 +20,8 @@ See [`docs/identity.md`](docs/identity.md) for the note convention and how to us
 
 **Guild Roster.** `/gf roster` shows the whole guild grouped by person: who's online and on which character, every alt with class and level, aliases and statuses. It has search and a show-offline toggle. See [`docs/roster.md`](docs/roster.md).
 
+**Helping and Mentoring.** Members tick what they're willing to help with (new players, class questions, tanking, healing, quests, dungeons, PvP, professions, mentoring). Guildmates find them with a **Can help with** filter in the Guild Roster and Discovery. See [`docs/helping.md`](docs/helping.md).
+
 ## Supported clients
 
 | Client | Manifest | Interface |

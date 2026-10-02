@@ -50,7 +50,7 @@ Slash commands: `/fellowship` and `/agf` always work. `/gf` works too unless ano
 | `/gf clear <bio\|alias> <name>` | Addon officers: clears someone's bio or profile alias |
 | `/gf version` | Prints the add-on version |
 
-Greeting guildmates who log in or join is covered in [Guild Greet](guild-greet.md). Finding guildmates to play with, and saying what you're up for, is covered in [Fellowship Discovery](discovery.md). Seeing the whole guild grouped by person is covered in [Guild Roster](roster.md).
+Greeting guildmates who log in or join is covered in [Guild Greet](guild-greet.md). Finding guildmates to play with, and saying what you're up for, is covered in [Fellowship Discovery](discovery.md). Seeing the whole guild grouped by person is covered in [Guild Roster](roster.md). Saying what you'll help guildmates with is covered in [Helping and Mentoring](helping.md).
 
 ## Your profile
 
@@ -59,6 +59,7 @@ In **Settings → Asgard's Guild Fellowship → My profile** you can set:
 - **Discord name** (up to 32 characters). This is **contact info only**: guildmates see it labelled as Discord. It's never used as your name, your tag, or a search term.
 - **What to call me** (up to 24 characters). This is your alias if your main's note doesn't set one with `@Alias`. The note always wins.
 - **About me** (up to 200 characters). A short bio shown in `/gf who` and, shortened, in tooltips.
+- **I can help with**: topics you're willing to help guildmates with (see [Helping and Mentoring](helping.md)).
 
 You can edit your profile from any of your characters. It's shared with guildmates who use the add-on, including while you're offline.
 
