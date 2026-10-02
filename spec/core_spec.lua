@@ -690,6 +690,39 @@ describe("Core", function()
             }, friend.log.addon.printed)
         end)
 
+        it("shares what someone helps with, shown in /fellowship who and the Guild Roster", function()
+            local alt = client("Malgen Zelwindran")
+            local friend = client("Kira")
+            local helps = alt.options.helps
+            assert.is_false(helps.disabled())
+            assert.are.equal("Tanking", helps.values.tanking)
+            helps.set(nil, "healing", true)
+            helps.set(nil, "tanking", true)
+            helps.set(nil, "quests", true)
+            helps.set(nil, "quests", false)
+            assert.is_true(helps.get(nil, "tanking"))
+            assert.is_false(helps.get(nil, "quests"))
+            assert.are.equal("tanking,healing", alt.ns.profiles:Get("G-D").helps)
+            deliver(alt, friend)
+            friend.ns.Core:HandleCommand("who Malgen Zelwindran")
+            assert.are.equal("  Helps with: Tanking, Healing", friend.log.addon.printed[#friend.log.addon.printed])
+            friend.ns.Core:HandleCommand("roster")
+            local headline
+            for _, widget in ipairs(friend.log.AceGUI.created) do
+                if widget.kind == "Label" and tostring(widget.text):find("^Dresden") then
+                    headline = widget.text
+                end
+            end
+            assert.are.equal("Dresden · offline · Helps with: Tanking, Healing", headline)
+        end)
+
+        it("disables the helping checkboxes outside a guild", function()
+            local _, log = boot({ units = { player = { name = "Nobody", player = true } } })
+            local helps = log.options.registered.table.args.myProfile.args.helps
+            assert.is_true(helps.disabled())
+            assert.is_false(helps.get(nil, "tanking"))
+        end)
+
         it("ignores a profile someone sends for another person", function()
             local impostor = client("Kira")
             local victim = client("Malgen Zelwindran")

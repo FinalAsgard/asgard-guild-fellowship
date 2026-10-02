@@ -606,7 +606,9 @@ function Core:RenderRoster(window)
     local settings = self.db.profile.roster
     local query = self.rosterQuery or ""
     local roster = store and addon.RosterView.Build(store, addon.availability,
-        { query = query, showOffline = settings.showOffline })
+        { query = query, showOffline = settings.showOffline, profileOf = function(personId)
+            return addon.profiles and addon.profiles:Get(personId)
+        end })
     if not roster or roster.totalPeople == 0 then
         window:AddText("The Guild Roster shows your guild once you're in a guild and the roster has loaded.")
         return

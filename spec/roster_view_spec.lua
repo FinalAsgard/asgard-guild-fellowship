@@ -31,6 +31,7 @@ local function setup(snapshot)
         "Core/IdentityResolver.lua",
         "Core/IdentityStore.lua",
         "Core/Availability.lua",
+        "Core/Helping.lua",
         "Core/RosterView.lua",
     })
     local store = ns.IdentityStore.New({})
