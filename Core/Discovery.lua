@@ -43,8 +43,9 @@ local function canFill(characters, role)
 end
 
 -- Whether a person with `status`, on character `current`, with `matching`
--- characters in level range, gets past the filters in `options` (see Build).
-function Discovery.Passes(status, current, matching, options)
+-- characters in level range and `helps` (their profile's stored topics), gets
+-- past the filters in `options` (see Build).
+function Discovery.Passes(status, current, matching, options, helps)
     if status == "busy" and not options.showBusy and options.status ~= "busy" then
         return false
     end
@@ -55,6 +56,9 @@ function Discovery.Passes(status, current, matching, options)
         return false
     end
     if options.role and not canFill(matching, options.role) then
+        return false
+    end
+    if options.helps and not addon.Helping.Has(helps, options.helps) then
         return false
     end
     return true
@@ -83,7 +87,9 @@ end
 --   zone       only people whose current character is in this zone (nil: any)
 --   role       "tank" or "heal": only people with a character in level range
 --              that can fill it (nil: any)
--- Each character also carries `roles`. Only people with a character online are
+--   profileOf  personId -> profile or nil, for what they help with
+--   helps      a Helping topic: only people who help with it (nil: any)
+-- Each entry also carries `helps` (topic labels) and each character `roles`. Only people with a character online are
 -- listed; the player is left out, and people who set Busy are too unless showBusy
 -- (or the status filter asks for Busy).
 function Discovery.Build(store, availability, me, options)
@@ -109,7 +115,9 @@ function Discovery.Build(store, availability, me, options)
                     end
                 end
             end
-            if current and Discovery.Passes(status, current, matching, options) then
+            local profile = options.profileOf and options.profileOf(personId)
+            local helps = profile and profile.helps
+            if current and Discovery.Passes(status, current, matching, options, helps) then
                 table.insert(people, {
                     personId = personId,
                     name = store:GetDisplayName(personId) or current.name,
@@ -117,6 +125,7 @@ function Discovery.Build(store, availability, me, options)
                     character = current,
                     zone = current.zone,
                     matching = matching,
+                    helps = addon.Helping.Labels(helps),
                 })
             end
         end
@@ -169,6 +178,9 @@ function Discovery.Lines(entry)
     end
     if entry.zone and entry.zone ~= "" then
         table.insert(parts, entry.zone)
+    end
+    if entry.helps and #entry.helps > 0 then
+        table.insert(parts, "Helps with: " .. table.concat(entry.helps, ", "))
     end
     local lines = { table.concat(parts, " · ") }
     local matches = {}
