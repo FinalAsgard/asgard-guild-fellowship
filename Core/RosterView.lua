@@ -10,9 +10,23 @@ addon.RosterView = RosterView
 -- they're on, or nil), characters = { main first: { key, name, level, class,
 -- className, online, zone, isMain } } }. Online people come first, then by name.
 -- `store`: IdentityStore. `availability`: Availability (or nil: everyone "none").
-function RosterView.Build(store, availability)
+-- `options`:
+--   query        keep only people matching it the way /gf who does (character
+--                name, Name-Realm, first name, or alias); empty keeps everyone
+--   showOffline  false hides people with no character online (default true)
+-- The counts always describe the whole guild, whatever the options keep.
+function RosterView.Build(store, availability, options)
+    options = options or {}
+    local matches
+    local query = options.query and options.query:match("^%s*(.-)%s*$") or ""
+    if query ~= "" then
+        matches = {}
+        for _, person in ipairs(store:FindByQuery(query)) do
+            matches[person.id] = true
+        end
+    end
     local people = {}
-    local onlinePeople, onlineCharacters = 0, 0
+    local onlinePeople, totalPeople, onlineCharacters = 0, 0, 0
     for _, personId in ipairs(store:GetPersonIds()) do
         local person = store:GetPersonById(personId)
         local characters, current = {}, nil
@@ -40,6 +54,10 @@ function RosterView.Build(store, availability)
             if current then
                 onlinePeople = onlinePeople + 1
             end
+            totalPeople = totalPeople + 1
+        end
+        if #characters > 0 and (not matches or matches[personId])
+            and (current or options.showOffline ~= false) then
             table.insert(people, {
                 personId = personId,
                 name = store:GetDisplayName(personId) or characters[1].name,
@@ -60,7 +78,7 @@ function RosterView.Build(store, availability)
         end
         return a.personId < b.personId
     end)
-    return { people = people, onlinePeople = onlinePeople, totalPeople = #people,
+    return { people = people, onlinePeople = onlinePeople, totalPeople = totalPeople,
         onlineCharacters = onlineCharacters }
 end
 

@@ -23,6 +23,8 @@ local DB_DEFAULTS = {
         availability = { share = true },
         -- Discovery's filters (status and role are nil for "any") and level range.
         discovery = { sameZone = false, showBusy = false, range = addon.Discovery.LEVEL_RANGE },
+        -- The Guild Roster's "Show offline people" choice.
+        roster = { showOffline = true },
     },
 }
 local LAUNCHER_ICON = "Interface\\Icons\\Achievement_GuildPerk_EverybodysFriend"
@@ -42,7 +44,7 @@ function Core:OnInitialize()
         width = 560,
         height = 500,
         render = function(window)
-            Core.RenderRoster(window)
+            self:RenderRoster(window)
         end,
     })
     self.noteHelperState = { mode = "link" }
@@ -597,19 +599,57 @@ function Core:RenderDiscovery(window)
     end
 end
 
--- The Guild Roster: everyone in the guild, grouped by person.
-function Core.RenderRoster(window)
+-- The Guild Roster: everyone in the guild, grouped by person. The search lasts
+-- for the session; "Show offline people" is saved.
+function Core:RenderRoster(window)
     local store = addon.identity
-    local roster = store and addon.RosterView.Build(store, addon.availability)
+    local settings = self.db.profile.roster
+    local query = self.rosterQuery or ""
+    local roster = store and addon.RosterView.Build(store, addon.availability,
+        { query = query, showOffline = settings.showOffline })
     if not roster or roster.totalPeople == 0 then
         window:AddText("The Guild Roster shows your guild once you're in a guild and the roster has loaded.")
         return
     end
+    -- Changes redraw on the next frame, so the widget that fired isn't
+    -- released inside its own callback.
+    local function redraw()
+        C_Timer.After(0, function()
+            self.rosterWindow:Refresh()
+        end)
+    end
     window:AddHeading(addon.RosterView.Summary(roster))
+    window:AddInput("Search (name or alias)", query, function(text)
+        self.rosterQuery = text
+        redraw()
+    end)
+    window:AddCheckBox("Show offline people", settings.showOffline, function(value)
+        settings.showOffline = value
+        redraw()
+    end)
+    if #roster.people == 0 then
+        if query:match("%S") then
+            window:AddText(("Nobody matches \"%s\"."):format(query))
+            window:AddButton("Clear search", function()
+                self.rosterQuery = nil
+                redraw()
+            end)
+        else
+            window:AddText("Nobody is online right now.")
+        end
+        return
+    end
+    local me = store:GetPerson(self:PlayerKey())
     for _, entry in ipairs(roster.people) do
         local lines = addon.RosterView.Lines(entry)
         window:AddText(lines[1], not entry.online and { 0.6, 0.6, 0.6 } or nil)
         window:AddText(lines[2], { 0.7, 0.7, 0.7 })
+        if entry.current and not (me and me.id == entry.personId) then
+            local target = entry.current.key
+            window:AddButton("Whisper " .. entry.current.name, function()
+                addon.Compat.OpenWhisper(target)
+            end)
+        end
     end
 end
 
