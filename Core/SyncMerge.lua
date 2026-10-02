@@ -130,3 +130,36 @@ function SyncMerge.Profile(personId, record, current, personOf, isOfficer)
     end
     return true
 end
+
+-- An availability record for person `personId` (see Availability). Accepted
+-- only when it is well formed, newer, still within its lifetime at `now`, lasts
+-- no longer than STATUS_TTL, and its author character currently resolves to
+-- that person in the receiver's view, so nobody can set someone else's status.
+-- Any peer may relay it: relayed data is trusted as accurate. A status this
+-- client doesn't know (from a newer version) is refused, not an error.
+-- `personOf(charKey)` -> person id.
+-- Returns true, or false and one of: malformed, unknown status, not newer,
+-- expired, not their character.
+function SyncMerge.Availability(personId, record, current, personOf, now)
+    if type(personId) ~= "string" or type(record) ~= "table" or type(record.status) ~= "string"
+        or type(record.version) ~= "number" or type(record.setAt) ~= "number"
+        or type(record.expiresAt) ~= "number" or type(record.author) ~= "string" then
+        return false, "malformed"
+    end
+    if not addon.Availability.IsKnown(record.status) then
+        return false, "unknown status"
+    end
+    if current and type(current.version) == "number" and record.version <= current.version then
+        return false, "not newer"
+    end
+    if record.expiresAt - record.setAt > addon.Availability.STATUS_TTL then
+        return false, "malformed"
+    end
+    if record.expiresAt <= now then
+        return false, "expired"
+    end
+    if personOf(record.author) ~= personId then
+        return false, "not their character"
+    end
+    return true
+end

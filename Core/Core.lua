@@ -19,6 +19,10 @@ local DB_DEFAULTS = {
         -- prompt: where the greet prompt was last dragged.
         -- newMessages: the player's new-member welcomes (nil: built-in defaults).
         greet = { enabled = false, welcomeNew = true, prompt = {} },
+        -- share: whether guildmates see what this player is up for.
+        availability = { share = true },
+        -- Discovery's filters (status and role are nil for "any") and level range.
+        discovery = { sameZone = false, showBusy = false, range = addon.Discovery.LEVEL_RANGE },
     },
 }
 local LAUNCHER_ICON = "Interface\\Icons\\Achievement_GuildPerk_EverybodysFriend"
@@ -44,14 +48,11 @@ function Core:OnInitialize()
     })
     self.roster = addon.RosterAdapter.New(function(snapshot)
         if addon.identity then
-            -- A rank change doesn't fire IdentityChanged, so redraw the main
-            -- panel when it turns this player's officer tools on or off.
-            local playerKey = self:PlayerKey()
-            local wasOfficer = addon.guildSettings:IsAddonOfficer(playerKey)
             addon.identity:Update(snapshot)
-            if wasOfficer ~= addon.guildSettings:IsAddonOfficer(playerKey) then
-                self.mainPanel:Refresh()
-            end
+            addon.availability:Prune()
+            -- Logins, levels, and zones feed Discovery, and a rank change can
+            -- turn officer tools on or off; neither fires IdentityChanged.
+            self.mainPanel:Refresh()
             self.greeter:OnSnapshot(snapshot)
             -- Sync starts once there is a roster to compare against.
             self.sync:Start()
@@ -80,6 +81,9 @@ function Core:OnInitialize()
         end,
         GreetToggled = function()
             self.greeter:Reset()
+        end,
+        DiscoveryChanged = function()
+            self.mainPanel:Refresh()
         end,
     })
     self.greeter = addon.Greeter.New({
@@ -143,13 +147,63 @@ function Core:HandleCommand(input)
         notes = function()
             self:OpenNoteHelper()
         end,
+        status = function(rest)
+            self:StatusCommand(rest)
+        end,
         usage = function()
             self:Print("/fellowship opens the main panel. /fellowship version prints the version.")
             self:Print("/fellowship who <name> looks up a guildmate by character name, first name, or alias.")
             self:Print("/fellowship clear <bio|alias> <name> (addon officers) clears someone's bio or alias.")
             self:Print("/fellowship notes opens the Note Helper for linking alts and setting aliases.")
+            self:Print("/fellowship status <" .. table.concat(addon.Availability.STATUSES, "|")
+                .. "|clear> sets what you're up for.")
         end,
     })
+end
+
+-- /gf status [status|clear]: prints, sets, or clears what this player is up for.
+function Core:StatusCommand(input)
+    local word = (input or ""):lower()
+    if not addon.availability then
+        self:Print("Availability works once you're in a guild.")
+        return
+    end
+    if word == "" then
+        local person = addon.identity:GetPerson(self:PlayerKey())
+        local status = addon.availability:Get(person and person.id)
+        self:Print(status == "none" and "You haven't set a status."
+            or ("Your status: %s."):format(addon.Availability.LABELS[status]))
+        return
+    end
+    local status = word == "clear" and "none" or word
+    if status == "none" or addon.Availability.LABELS[status] then
+        local ok = self:SetStatus(status)
+        if not ok then
+            self:Print("Your character isn't in the guild roster yet. Try again in a moment.")
+        elseif status == "none" then
+            self:Print("Status cleared.")
+        else
+            self:Print(("Status set: %s."):format(addon.Availability.LABELS[status]))
+        end
+        return
+    end
+    self:Print("Usage: /fellowship status <" .. table.concat(addon.Availability.STATUSES, "|") .. "|clear>")
+end
+
+-- Sets (or, with "none", clears) this player's status and sends it to the guild
+-- right away when sync and sharing are on. Returns true, or false and a reason.
+function Core:SetStatus(status)
+    if not addon.availability then
+        return false, "not in a guild"
+    end
+    local personId, reason = addon.availability:Set(self:PlayerKey(), status)
+    if not personId then
+        return false, reason
+    end
+    if self.sync and self.db.profile.sync.enabled and self.db.profile.availability.share then
+        self.sync:SendRecords("availability", { personId })
+    end
+    return true
 end
 
 -- /gf who <query>
@@ -314,12 +368,17 @@ function Core:CreateLauncher()
         type = "launcher",
         text = addon.Options.TITLE,
         icon = LAUNCHER_ICON,
-        OnClick = function()
-            self.mainPanel:Toggle()
+        OnClick = function(frame, button)
+            if button == "RightButton" then
+                self:ShowStatusMenu(frame)
+            else
+                self.mainPanel:Toggle()
+            end
         end,
         OnTooltipShow = function(tooltip)
             tooltip:AddLine(addon.Options.TITLE)
             tooltip:AddLine("Click to open or close.", 1, 1, 1)
+            tooltip:AddLine("Right-click to set what you're up for.", 1, 1, 1)
         end,
     })
     LibStub("LibDBIcon-1.0"):Register(addonName, launcher, self.db.profile.minimap)
@@ -356,18 +415,25 @@ function Core:UpdateGuild()
             return addon.guildSettings:IsAddonOfficer(charKey)
         end)
         self.sync:RegisterType("profile", addon.profiles:SyncHandler())
+        addon.availability = addon.Availability.New(addon.identity, GetServerTime, function(personId)
+            local me = addon.identity:GetPerson(self:PlayerKey())
+            return self.db.profile.availability.share or not me or me.id ~= personId
+        end)
+        self.sync:RegisterType("availability", addon.availability:SyncHandler())
         self.sync:Listen("greet", function(data, sender)
             self.greeter:OnClaim(type(data) == "table" and data.persons, sender)
         end)
         -- Keep the main panel current as identity and officer ranks change.
         addon.identity.RegisterCallback(self, "IdentityChanged", "RefreshMainPanel")
         addon.guildSettings.RegisterCallback(self, "GuildSettingsChanged", "RefreshMainPanel")
+        addon.availability.RegisterCallback(self, "AvailabilityChanged", "OnAvailabilityChanged")
         self:RegisterEvent("GUILD_ROSTER_UPDATE", "OnGuildRosterUpdate")
         self.roster:Request()
     else
         addon.identity = nil
         addon.guildSettings = nil
         addon.profiles = nil
+        addon.availability = nil
         self:UnregisterEvent("GUILD_ROSTER_UPDATE")
     end
     self.greeter:Reset()
@@ -399,15 +465,43 @@ function Core:OnCombatEnded()
     self.greeter:OnCombatEnded()
 end
 
+function Core:OnAvailabilityChanged()
+    self:RefreshMainPanel()
+    self:SchedulePrune()
+end
+
+-- A status that simply times out fires no event, so prune when the next one
+-- lapses; pruning fires AvailabilityChanged, which redraws and reschedules.
+function Core:SchedulePrune()
+    local availability = addon.availability
+    local expiry = availability and availability:NextExpiry()
+    if not expiry or (self.pruneAt and self.pruneAt <= expiry) then
+        return
+    end
+    self.pruneAt = expiry
+    C_Timer.After(math.max(expiry - GetServerTime(), 0) + 1, function()
+        if self.pruneAt ~= expiry then
+            return
+        end
+        self.pruneAt = nil
+        if addon.availability == availability then
+            availability:Prune()
+        end
+        -- Also covers a guild change while waiting: schedule for the current one.
+        self:SchedulePrune()
+    end)
+end
+
 function Core:RefreshMainPanel()
     self.mainPanel:Refresh()
     self.noteHelper:Refresh()
 end
 
--- The main panel: the Note Helper for everyone, plus the Identity Issues view
--- for addon officers.
+-- The main panel: Discovery and the Note Helper for everyone, plus the
+-- Identity Issues view for addon officers.
 function Core:RenderMainPanel(window)
     local store = addon.identity
+    self:RenderDiscovery(window)
     window:AddButton("Open Note Helper", function()
         self:OpenNoteHelper()
     end, store == nil)
@@ -436,6 +530,117 @@ function Core:RenderMainPanel(window)
             end)
         end
     end
+end
+
+-- Discovery: online guildmates to play with, with their characters near this
+-- character's level.
+function Core:RenderDiscovery(window)
+    local store = addon.identity
+    local playerKey = self:PlayerKey()
+    local person = store and store:GetPerson(playerKey)
+    local info = store and store:GetCharacterInfo(playerKey)
+    if not person or not info then
+        window:AddHeading("Discovery")
+        window:AddText("Discovery shows who you could play with once you're in a guild and the roster has loaded.")
+        return
+    end
+    local filters = self.db.profile.discovery
+    local people = addon.Discovery.Build(store, addon.availability, { personId = person.id, level = info.level }, {
+        range = filters.range,
+        maxLevel = addon.Compat.MaxLevel(),
+        rolesOf = addon.Compat.ClassRoles,
+        showBusy = filters.showBusy,
+        status = filters.status,
+        zone = filters.sameZone and (info.zone or "") or nil,
+        role = filters.role,
+    })
+    window:AddHeading(("Discovery (%d)"):format(#people))
+    window:AddDropdown("My status", self:StatusChoices(), addon.availability:Get(person.id), function(value)
+        -- Redraw on the next frame, so the dropdown isn't released inside its own callback.
+        C_Timer.After(0, function()
+            self:SetStatus(value)
+        end)
+    end)
+    self:RenderDiscoveryFilters(window, filters)
+    if #people == 0 then
+        local filtered = filters.status or filters.role or filters.sameZone
+        window:AddText(filtered and "Nobody online matches these filters right now."
+            or "Nobody else is online who's free to play right now.")
+        return
+    end
+    for _, entry in ipairs(people) do
+        for index, line in ipairs(addon.Discovery.Lines(entry)) do
+            window:AddText(line, index > 1 and { 0.7, 0.7, 0.7 } or nil)
+        end
+        local target = entry.character.key
+        window:AddButton("Whisper " .. entry.character.name, function()
+            addon.Compat.OpenWhisper(target)
+        end)
+    end
+end
+
+-- The statuses as { value, text } choices, "none" (Clear) last.
+function Core.StatusChoices()
+    local choices = {}
+    for _, status in ipairs(addon.Availability.STATUSES) do
+        table.insert(choices, { value = status, text = addon.Availability.LABELS[status] })
+    end
+    table.insert(choices, { value = "none", text = "Clear" })
+    return choices
+end
+
+-- The status menu on the minimap button's right-click.
+function Core:ShowStatusMenu(anchor)
+    if not addon.availability then
+        self:Print("Availability works once you're in a guild.")
+        return
+    end
+    local person = addon.identity:GetPerson(self:PlayerKey())
+    local current = addon.availability:Get(person and person.id)
+    local items = {}
+    for _, choice in ipairs(self:StatusChoices()) do
+        table.insert(items, {
+            text = choice.text,
+            checked = choice.value == current,
+            func = function()
+                self:SetStatus(choice.value)
+            end,
+        })
+    end
+    if not addon.Compat.ShowMenu(anchor, "What are you up for?", items) then
+        self:Print("Use /fellowship status to set what you're up for.")
+    end
+end
+
+-- Discovery's filters, saved in the profile. A change redraws the panel on the
+-- next frame, so the widget that fired isn't released inside its own callback.
+function Core:RenderDiscoveryFilters(window, filters)
+    local function changed(field, value)
+        filters[field] = value
+        C_Timer.After(0, function()
+            self.mainPanel:Refresh()
+        end)
+    end
+    local statuses = { { value = "any", text = "Any status" } }
+    for _, status in ipairs(addon.Availability.STATUSES) do
+        table.insert(statuses, { value = status, text = addon.Availability.LABELS[status] })
+    end
+    window:AddDropdown("Up for", statuses, filters.status or "any", function(value)
+        changed("status", value ~= "any" and value or nil)
+    end)
+    window:AddDropdown("Can fill", {
+        { value = "any", text = "Any role" },
+        { value = "tank", text = "Tank" },
+        { value = "heal", text = "Healer" },
+    }, filters.role or "any", function(value)
+        changed("role", value ~= "any" and value or nil)
+    end)
+    window:AddCheckBox("Same zone as me", filters.sameZone, function(value)
+        changed("sameZone", value)
+    end)
+    window:AddCheckBox("Show Busy", filters.showBusy, function(value)
+        changed("showBusy", value)
+    end)
 end
 
 function Core:OnGuildRosterUpdate(_, canRequestRosterUpdate)

@@ -76,7 +76,9 @@ describe("Core", function()
         it("prints usage for an unknown command", function()
             local ns, log = boot()
             ns.Core:HandleCommand("dance")
-            assert.are.equal(4, #log.addon.printed)
+            assert.are.equal(5, #log.addon.printed)
+            assert.are.equal("/fellowship status <questing|dungeons|pvp|helping|anything|busy|clear> sets what "
+                .. "you're up for.", log.addon.printed[5])
             assert.is_false(ns.Core.mainPanel:IsShown())
         end)
     end)
@@ -88,6 +90,49 @@ describe("Core", function()
             assert.are.equal("launcher", launcher.type)
             assert.are.equal(launcher, log.icons.AsgardsGuildFellowship.object)
             assert.are.equal(log.db.profile.minimap, log.icons.AsgardsGuildFellowship.settings)
+        end)
+
+        it("opens the status menu on right-click, marking the current status", function()
+            local shown
+            local ns, log, harness = boot({
+                client = "Forever", guild = { name = "Asgard" },
+                roster = { { name = "Kira", guid = "G-K", note = "", online = true, level = 30 } },
+                units = { player = { name = "Kira", player = true } },
+            })
+            ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", false)
+            harness:advance(1)
+            ns.Compat.ShowMenu = function(anchor, title, items)
+                shown = { anchor = anchor, title = title, items = items }
+                return true
+            end
+            ns.Core:SetStatus("pvp")
+            local launcher = log.launchers.AsgardsGuildFellowship
+            launcher.OnClick("button", "RightButton")
+            assert.is_false(ns.Core.mainPanel:IsShown())
+            assert.are.equal("button", shown.anchor)
+            assert.are.equal("What are you up for?", shown.title)
+            assert.are.equal(7, #shown.items)
+            assert.are.equal("PvP", shown.items[3].text)
+            assert.is_true(shown.items[3].checked)
+            assert.is_false(shown.items[1].checked)
+            assert.are.equal("Clear", shown.items[7].text)
+            shown.items[2].func()
+            assert.are.equal("dungeons", ns.availability:Get("G-K"))
+        end)
+
+        it("points to the slash command when the client has no menu, and needs a guild", function()
+            local ns, log, harness = boot({
+                client = "Forever", guild = { name = "Asgard" },
+                roster = { { name = "Kira", guid = "G-K", note = "", online = true, level = 30 } },
+                units = { player = { name = "Kira", player = true } },
+            })
+            ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", false)
+            harness:advance(1)
+            log.launchers.AsgardsGuildFellowship.OnClick("button", "RightButton")
+            assert.are.same({ "Use /fellowship status to set what you're up for." }, log.addon.printed)
+            local outside, outsideLog = boot()
+            outside.Core:ShowStatusMenu("button")
+            assert.are.same({ "Availability works once you're in a guild." }, outsideLog.addon.printed)
         end)
 
         it("toggles the main panel on click", function()
@@ -655,6 +700,291 @@ describe("Core", function()
         end)
     end)
 
+    describe("availability", function()
+        local ROSTER = {
+            { name = "Dresden Zelwindran", guid = "G-D", note = "", online = false, level = 60, className = "Mage" },
+            { name = "Malgen Zelwindran", guid = "G-M", note = ">Dresden", online = true, level = 30,
+                className = "Warrior", zone = "Duskwood" },
+            { name = "Kira", guid = "G-K", note = "", online = true, level = 33, className = "Priest" },
+        }
+
+        local function client(name)
+            local ns, log, harness = boot({
+                client = "Forever", guild = { name = "Asgard" }, roster = ROSTER,
+                units = { player = { name = name, player = true } },
+            })
+            ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", false)
+            harness:advance(1)
+            log.addon.printed = {}
+            return { name = name, ns = ns, log = log, harness = harness,
+                share = log.options.registered.table.args.features.args.shareAvailability }
+        end
+
+        local function deliver(from, to)
+            local sent = from.log.addon.sent
+            from.log.addon.sent = {}
+            for _, message in ipairs(sent) do
+                to.ns.Core:OnCommReceived(message.prefix, message.message, message.distribution, from.name)
+            end
+        end
+
+        it("sets a status for the person from /fellowship status and shares it with guildmates", function()
+            local alt = client("Malgen Zelwindran")
+            local friend = client("Kira")
+            alt.ns.Core:HandleCommand("status Dungeons")
+            assert.are.same({ "Status set: Dungeons." }, alt.log.addon.printed)
+            deliver(alt, friend)
+            assert.are.equal("dungeons", friend.ns.availability:Get("G-D"))
+            alt.ns.Core:HandleCommand("status")
+            assert.are.equal("Your status: Dungeons.", alt.log.addon.printed[2])
+        end)
+
+        it("clears a status everywhere", function()
+            local alt = client("Malgen Zelwindran")
+            local friend = client("Kira")
+            alt.ns.Core:HandleCommand("status pvp")
+            deliver(alt, friend)
+            alt.harness:advance(1)
+            alt.ns.Core:HandleCommand("status clear")
+            deliver(alt, friend)
+            assert.are.equal("none", friend.ns.availability:Get("G-D"))
+            assert.are.same({ "Status set: PvP.", "Status cleared." }, alt.log.addon.printed)
+            alt.ns.Core:HandleCommand("status")
+            assert.are.equal("You haven't set a status.", alt.log.addon.printed[3])
+        end)
+
+        it("prints usage for an unknown status", function()
+            local alt = client("Malgen Zelwindran")
+            alt.ns.Core:HandleCommand("status raiding")
+            assert.are.same({ "Usage: /fellowship status <questing|dungeons|pvp|helping|anything|busy|clear>" },
+                alt.log.addon.printed)
+            assert.are.equal("none", alt.ns.availability:Get("G-D"))
+        end)
+
+        it("explains that availability needs a guild", function()
+            local ns, log = boot({ units = { player = { name = "Nobody", player = true } } })
+            ns.Core:HandleCommand("status pvp")
+            assert.are.same({ "Availability works once you're in a guild." }, log.addon.printed)
+        end)
+
+        it("keeps a status local when sharing is off", function()
+            local alt = client("Malgen Zelwindran")
+            local friend = client("Kira")
+            assert.is_true(alt.share.get())
+            alt.share.set(nil, false)
+            alt.ns.Core:HandleCommand("status helping")
+            assert.are.same({}, alt.log.addon.sent)
+            assert.are.equal("helping", alt.ns.availability:Get("G-D"))
+            assert.is_nil(alt.ns.Core.sync.types.availability.Get("G-D"))
+            deliver(alt, friend)
+            assert.are.equal("none", friend.ns.availability:Get("G-D"))
+        end)
+
+        it("reaches a guildmate who logs in later, through the digest exchange", function()
+            local alt = client("Malgen Zelwindran")
+            alt.ns.Core:HandleCommand("status anything")
+            alt.log.addon.sent = {}
+            local friend = client("Kira")
+            for _ = 1, 40 do
+                deliver(alt, friend)
+                deliver(friend, alt)
+                alt.harness:advance(1)
+                friend.harness:advance(1)
+            end
+            assert.are.equal("anything", friend.ns.availability:Get("G-D"))
+        end)
+
+        local function panel(c)
+            local scroll
+            for _, widget in ipairs(c.log.AceGUI.created) do
+                if widget.kind == "ScrollFrame" then
+                    scroll = widget
+                end
+            end
+            -- Text only: the filter widgets come back separately, by label.
+            local result, controls = {}, {}
+            for _, child in ipairs(scroll.children) do
+                if child.text == "Open Note Helper" then
+                    break
+                end
+                if child.label then
+                    controls[child.label] = child
+                else
+                    table.insert(result, child.kind .. ":" .. tostring(child.text))
+                end
+            end
+            return result, controls
+        end
+
+        it("lists guildmates in the main panel's Discovery section, live as statuses arrive", function()
+            local alt = client("Malgen Zelwindran")
+            local friend = client("Kira")
+            friend.ns.Core:HandleCommand("")
+            assert.are.same({
+                "Heading:Discovery (1)",
+                "Label:Dresden — Malgen Zelwindran, Warrior 30 · Duskwood",
+                "Label:    At your level: Malgen Zelwindran, Warrior 30",
+                "Button:Whisper Malgen Zelwindran",
+            }, panel(friend))
+            alt.ns.Core:HandleCommand("status dungeons")
+            deliver(alt, friend)
+            assert.are.equal("Label:Dresden — Malgen Zelwindran, Warrior 30 · Up for Dungeons · Duskwood",
+                panel(friend)[2])
+        end)
+
+        it("drops a status from an open panel when it times out, without a roster update", function()
+            local alt = client("Malgen Zelwindran")
+            local friend = client("Kira")
+            friend.ns.Core:HandleCommand("")
+            alt.ns.Core:HandleCommand("status dungeons")
+            deliver(alt, friend)
+            assert.are.equal("Label:Dresden — Malgen Zelwindran, Warrior 30 · Up for Dungeons · Duskwood",
+                panel(friend)[2])
+            friend.harness:advance(2 * 60 * 60 - 10)
+            assert.are.equal("Label:Dresden — Malgen Zelwindran, Warrior 30 · Up for Dungeons · Duskwood",
+                panel(friend)[2])
+            friend.harness:advance(20)
+            assert.are.equal("Label:Dresden — Malgen Zelwindran, Warrior 30 · Duskwood", panel(friend)[2])
+            assert.is_nil(friend.ns.availability.records["G-D"])
+        end)
+
+        it("updates Discovery when the roster changes and hides people set to Busy", function()
+            local alt = client("Malgen Zelwindran")
+            local friend = client("Kira")
+            friend.ns.Core:HandleCommand("")
+            alt.ns.Core:HandleCommand("status busy")
+            deliver(alt, friend)
+            assert.are.same({ "Heading:Discovery (0)", "Label:Nobody else is online who's free to play right now." },
+                panel(friend))
+            alt.harness:advance(1)
+            alt.ns.Core:HandleCommand("status clear")
+            deliver(alt, friend)
+            friend.harness.options.roster = { ROSTER[1], { name = "Malgen Zelwindran", guid = "G-M",
+                note = ">Dresden", online = false, level = 30, className = "Warrior" }, ROSTER[3] }
+            friend.ns.Core[friend.log.addon.events.GUILD_ROSTER_UPDATE](friend.ns.Core, "GUILD_ROSTER_UPDATE", false)
+            friend.harness:advance(1)
+            assert.are.equal("Heading:Discovery (0)", panel(friend)[1])
+        end)
+
+        it("filters Discovery from saved filters, redrawing on change", function()
+            local alt = client("Malgen Zelwindran")
+            local friend = client("Kira")
+            friend.ns.Core:HandleCommand("")
+            local _, controls = panel(friend)
+            assert.are.equal("any", controls["Up for"].value)
+            assert.are.equal("any", controls["Can fill"].value)
+            assert.is_false(controls["Same zone as me"].value)
+            assert.is_false(controls["Show Busy"].value)
+            controls["Up for"].callbacks.OnValueChanged(controls["Up for"], "OnValueChanged", "pvp")
+            friend.harness:advance(0)
+            assert.are.equal("pvp", friend.ns.Core.db.profile.discovery.status)
+            assert.are.same({ "Heading:Discovery (0)", "Label:Nobody online matches these filters right now." },
+                panel(friend))
+            alt.ns.Core:HandleCommand("status pvp")
+            deliver(alt, friend)
+            assert.are.equal("Heading:Discovery (1)", panel(friend)[1])
+            _, controls = panel(friend)
+            assert.are.equal("pvp", controls["Up for"].value)
+            controls["Same zone as me"].callbacks.OnValueChanged(controls["Same zone as me"], "OnValueChanged", true)
+            friend.harness:advance(0)
+            assert.are.equal("Heading:Discovery (0)", panel(friend)[1])
+            controls = select(2, panel(friend))
+            controls["Up for"].callbacks.OnValueChanged(controls["Up for"], "OnValueChanged", "any")
+            controls["Same zone as me"].callbacks.OnValueChanged(controls["Same zone as me"], "OnValueChanged", false)
+            controls["Can fill"].callbacks.OnValueChanged(controls["Can fill"], "OnValueChanged", "heal")
+            friend.harness:advance(0)
+            assert.is_nil(friend.ns.Core.db.profile.discovery.status)
+            assert.are.equal("heal", friend.ns.Core.db.profile.discovery.role)
+            assert.are.equal("Heading:Discovery (0)", panel(friend)[1])
+        end)
+
+        local function button(c, text)
+            local scroll
+            for _, widget in ipairs(c.log.AceGUI.created) do
+                if widget.kind == "ScrollFrame" then
+                    scroll = widget
+                end
+            end
+            for _, child in ipairs(scroll.children) do
+                if child.text == text then
+                    return child
+                end
+            end
+        end
+
+        it("opens a pre-addressed whisper from Discovery and sends nothing", function()
+            local told = {}
+            local ns, log, harness = boot({
+                client = "Forever", guild = { name = "Asgard" }, roster = ROSTER,
+                units = { player = { name = "Kira", player = true } },
+                globals = { ChatFrame_SendTell = function(name) table.insert(told, name) end,
+                    SendChatMessage = function() error("nothing may be sent") end },
+            })
+            ns.Core[log.addon.events.GUILD_ROSTER_UPDATE](ns.Core, "GUILD_ROSTER_UPDATE", false)
+            harness:advance(1)
+            ns.Core:HandleCommand("")
+            local friend = { log = log }
+            button(friend, "Whisper Malgen Zelwindran").callbacks.OnClick()
+            assert.are.same({ "Malgen Zelwindran" }, told)
+            assert.are.same({}, log.addon.sent)
+        end)
+
+        it("sets my status from the Discovery view", function()
+            local alt = client("Malgen Zelwindran")
+            local friend = client("Kira")
+            alt.ns.Core:HandleCommand("")
+            local _, controls = panel(alt)
+            assert.are.equal("none", controls["My status"].value)
+            controls["My status"].callbacks.OnValueChanged(controls["My status"], "OnValueChanged", "helping")
+            alt.harness:advance(0)
+            assert.are.equal("helping", select(2, panel(alt))["My status"].value)
+            deliver(alt, friend)
+            assert.are.equal("helping", friend.ns.availability:Get("G-D"))
+        end)
+
+        it("uses the level range from settings", function()
+            local alt = client("Malgen Zelwindran")
+            alt.ns.Core:HandleCommand("")
+            assert.are.equal("Label:    At your level: Kira, Priest 33", panel(alt)[3])
+            local range = alt.log.options.registered.table.args.features.args.discoveryRange
+            assert.are.equal(3, range.get())
+            assert.are.equal(1, range.min)
+            assert.are.equal(10, range.max)
+            range.set(nil, 2)
+            assert.are.same({ "Heading:Discovery (1)", "Label:Kira — Kira, Priest 33", "Button:Whisper Kira" },
+                panel(alt))
+        end)
+
+        it("explains Discovery outside a guild", function()
+            local ns, log = boot({ units = { player = { name = "Nobody", player = true } } })
+            ns.Core:HandleCommand("")
+            local c = { log = log }
+            assert.are.same({ "Heading:Discovery",
+                "Label:Discovery shows who you could play with once you're in a guild and the roster has loaded." },
+                panel(c))
+        end)
+
+        it("ends a status when the person logs off", function()
+            local alt = client("Malgen Zelwindran")
+            local friend = client("Kira")
+            alt.ns.Core:HandleCommand("status questing")
+            deliver(alt, friend)
+            assert.are.equal("questing", friend.ns.availability:Get("G-D"))
+            local offline = {
+                ROSTER[1],
+                { name = "Malgen Zelwindran", guid = "G-M", note = ">Dresden", online = false },
+                ROSTER[3],
+            }
+            friend.harness.options.roster = offline
+            friend.ns.Core[friend.log.addon.events.GUILD_ROSTER_UPDATE](friend.ns.Core, "GUILD_ROSTER_UPDATE", true)
+            friend.harness:advance(1)
+            friend.harness.options.roster = ROSTER
+            friend.ns.Core[friend.log.addon.events.GUILD_ROSTER_UPDATE](friend.ns.Core, "GUILD_ROSTER_UPDATE", true)
+            friend.harness:advance(1)
+            assert.are.equal("none", friend.ns.availability:Get("G-D"))
+        end)
+    end)
+
     describe("/fellowship clear", function()
         local RANKS = { { name = "Guild Master", canEditOfficerNote = true }, { name = "Member" } }
         local ROSTER = {
@@ -752,11 +1082,15 @@ describe("Core", function()
                         scroll = widget
                     end
                 end
-                local result = {}
+                -- From the Note Helper button on: the Discovery section above has its own tests.
+                local result, children = {}, {}
                 for _, child in ipairs(scroll.children) do
-                    table.insert(result, child.kind .. ":" .. tostring(child.text))
+                    if #children > 0 or child.text == "Open Note Helper" then
+                        table.insert(children, child)
+                        table.insert(result, child.kind .. ":" .. tostring(child.text))
+                    end
                 end
-                return result, scroll
+                return result, { children = children }
             end
             return ns, texts, harness, log
         end

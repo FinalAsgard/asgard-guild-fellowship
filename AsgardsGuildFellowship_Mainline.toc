@@ -18,11 +18,13 @@ Core\SyncMerge.lua
 Core\IdentityStore.lua
 Core\GuildSettings.lua
 Core\Profiles.lua
+Core\Availability.lua
 Core\RosterAdapter.lua
 Core\ChatTag.lua
 Core\TooltipFormatter.lua
 Core\Tooltip.lua
 Core\WhoFormatter.lua
+Core\Discovery.lua
 Core\IssuesView.lua
 Core\NoteHelper.lua
 Core\Protocol.lua

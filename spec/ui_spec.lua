@@ -135,6 +135,19 @@ describe("UI.Window", function()
             input.callbacks.OnEnterPressed(input, "OnEnterPressed", "Drez")
             assert.are.equal("Drez", typed)
         end)
+
+        it("adds checkboxes that report changes", function()
+            local checked
+            local _, scroll = rendered(function(window)
+                window:AddCheckBox("Same zone", true, function(value) checked = value end)
+            end)
+            local checkbox = scroll.children[1]
+            assert.are.equal("CheckBox", checkbox.kind)
+            assert.are.equal("Same zone", checkbox.label)
+            assert.is_true(checkbox.value)
+            checkbox.callbacks.OnValueChanged(checkbox, "OnValueChanged", false)
+            assert.is_false(checked)
+        end)
     end)
 end)
 

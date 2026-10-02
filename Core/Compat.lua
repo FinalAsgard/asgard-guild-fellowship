@@ -209,3 +209,80 @@ function Compat.JoinedGuildName(message)
     end
     return message:match(pattern)
 end
+
+-- The level cap that Discovery's "only other capped characters" rule applies
+-- at, or nil. Retail only: on Forever the level range applies at every level.
+function Compat.MaxLevel()
+    if Compat.IsForever() then
+        return nil
+    end
+    if GetMaxLevelForPlayerExpansion then
+        return GetMaxLevelForPlayerExpansion()
+    end
+    return MAX_PLAYER_LEVEL
+end
+
+-- Which classes can tank or heal, by class token. A hint only: specs aren't
+-- detected. Retail adds its newer classes to the classic list.
+local CLASSIC_ROLES = {
+    WARRIOR = { tank = true },
+    PALADIN = { tank = true, heal = true },
+    DRUID = { tank = true, heal = true },
+    PRIEST = { heal = true },
+    SHAMAN = { heal = true },
+}
+local RETAIL_ROLES = {
+    DEATHKNIGHT = { tank = true },
+    DEMONHUNTER = { tank = true },
+    MONK = { tank = true, heal = true },
+    EVOKER = { heal = true },
+}
+
+-- { tank = boolean, heal = boolean } for a class token.
+function Compat.ClassRoles(class)
+    local roles = CLASSIC_ROLES[class] or (not Compat.IsForever() and RETAIL_ROLES[class]) or {}
+    return { tank = roles.tank == true, heal = roles.heal == true }
+end
+
+-- Opens the chat box with a whisper to `charKey` already addressed, as the
+-- game's own "Whisper" menu entry does. Sends nothing. On Forever the realm is
+-- left off. Returns false where the client offers no way to.
+function Compat.OpenWhisper(charKey)
+    local target = Compat.IsForever() and Compat.NameFromKey(charKey) or charKey
+    local sendTell = (ChatFrameUtil and ChatFrameUtil.SendTell) or ChatFrame_SendTell
+    if not sendTell then
+        return false
+    end
+    sendTell(target)
+    return true
+end
+
+local menuFrame
+
+-- Shows a small menu at the cursor: a title, then `items` as radio choices
+-- ({ text, checked = boolean, func }). Uses the Retail context-menu API where
+-- it exists, else the classic dropdown menu. Returns false where neither does.
+function Compat.ShowMenu(anchor, title, items)
+    if MenuUtil and MenuUtil.CreateContextMenu then
+        MenuUtil.CreateContextMenu(anchor, function(_, root)
+            root:CreateTitle(title)
+            for _, item in ipairs(items) do
+                root:CreateRadio(item.text, function()
+                    return item.checked
+                end, item.func)
+            end
+        end)
+        return true
+    end
+    if EasyMenu and CreateFrame then
+        menuFrame = menuFrame or CreateFrame("Frame", "AsgardsGuildFellowshipMenu", UIParent,
+            "UIDropDownMenuTemplate")
+        local list = { { text = title, isTitle = true, notCheckable = true } }
+        for _, item in ipairs(items) do
+            table.insert(list, { text = item.text, checked = item.checked, func = item.func })
+        end
+        EasyMenu(list, menuFrame, "cursor", 0, 0, "MENU")
+        return true
+    end
+    return false
+end

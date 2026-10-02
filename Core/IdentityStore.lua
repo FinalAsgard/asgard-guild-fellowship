@@ -82,6 +82,16 @@ function IdentityStore:GetPerson(charKey)
     return id and self.persons[id]
 end
 
+-- Every person's ID, sorted.
+function IdentityStore:GetPersonIds()
+    local ids = {}
+    for id in pairs(self.persons) do
+        table.insert(ids, id)
+    end
+    table.sort(ids)
+    return ids
+end
+
 function IdentityStore:GetPersonById(personId)
     return self.persons[personId]
 end

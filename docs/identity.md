@@ -45,10 +45,11 @@ Slash commands: `/fellowship` and `/agf` always work. `/gf` works too unless ano
 | `/gf` | Opens the main panel |
 | `/gf who <name>` | Looks up a guildmate |
 | `/gf notes` | Opens the Note Helper |
+| `/gf status <status\|clear>` | Sets or clears what you're up for (see [Discovery](discovery.md)) |
 | `/gf clear <bio\|alias> <name>` | Addon officers: clears someone's bio or profile alias |
 | `/gf version` | Prints the add-on version |
 
-Greeting guildmates who log in or join is covered in [Guild Greet](guild-greet.md).
+Greeting guildmates who log in or join is covered in [Guild Greet](guild-greet.md). Finding guildmates to play with, and saying what you're up for, is covered in [Fellowship Discovery](discovery.md).
 
 ## Your profile
 
@@ -77,14 +78,15 @@ Guildmates who run the add-on quietly share:
 
 - identity links (so a new user immediately gets the same answers for ambiguous notes),
 - profiles,
-- the guild settings.
+- the guild settings,
+- what each person is up for ([availability](discovery.md), short-lived and never saved).
 
 Sync uses one hidden add-on channel. It's light and rate-limited, and it can be turned off under **Settings → Sync with other add-on users**.
 
 Shared data is trusted as passed along, with a few checks:
 
 - A link is only accepted if it fits the guild notes as the receiver sees them.
-- A profile change must come from one of that person's own characters.
+- A profile change or availability status must come from one of that person's own characters.
 - Guild settings and profile clears must come from an addon officer.
 
 ## Saved data
