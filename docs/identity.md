@@ -50,7 +50,7 @@ Slash commands: `/fellowship` and `/agf` always work. `/gf` works too unless ano
 | `/gf clear <bio\|alias> <name>` | Addon officers: clears someone's bio or profile alias |
 | `/gf version` | Prints the add-on version |
 
-Greeting guildmates who log in or join is covered in [Guild Greet](guild-greet.md). Finding guildmates to play with, and saying what you're up for, is covered in [Fellowship Discovery](discovery.md).
+Greeting guildmates who log in or join is covered in [Guild Greet](guild-greet.md). Finding guildmates to play with, and saying what you're up for, is covered in [Fellowship Discovery](discovery.md). Seeing the whole guild grouped by person is covered in [Guild Roster](roster.md).
 
 ## Your profile
 
